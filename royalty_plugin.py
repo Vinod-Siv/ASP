@@ -19,10 +19,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = 'db-rr1.uaudio.com'
+    hostname = '***********'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = 'fS6eb96j58jL1t1h'
+    psd = '****************'
 
     conn = pymysql.connect(
         host=hostname,
