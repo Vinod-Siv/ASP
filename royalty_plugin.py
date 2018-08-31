@@ -14,15 +14,15 @@ def dbconnection():
 
     # Code to access S3 bucket
     # s3 = boto3.client('s3')
-    # obj = s3.get_object(Bucket='************', Key='*************')
+    # obj = s3.get_object(Bucket='bizapps.uaudio', Key='redshift.env.sh')
     # content = (obj['Body'].read())
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '***************'
+    hostname = '***********'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
-    username = '**************'
-    psd = '*****************'
+    username = 'redshift'
+    psd = '***********'
 
     conn = pymysql.connect(
         host=hostname,
@@ -41,11 +41,10 @@ def buildskumap():
     :return: newskumap -> {SKU name : List of Products}
     '''
 
-
     # Query to build the SKU map from RDS
     with conn.cursor() as cursor:
         sql = """select  REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
-                    GROUP_CONCAT(SUBSTR(sp.products_code, 4) ORDER BY sp.products_code) AS product_codes
+                    GROUP_CONCAT(SUBSTR(sp.products_code, 3) ORDER BY sp.products_code) AS product_codes
                  from uaudio.skus s
                  join uaudio.skus_products AS sp  ON s.skus_id=sp.skus_id
                  join uaudio.products AS p ON sp.products_code=p.products_code
@@ -92,12 +91,12 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-31' 
-                    # AND o.entity_id = 1233964
+                    # AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-31' 
+                    AND o.entity_id = 1233964
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
-        result = cursor.fetchall()  
+        result = cursor.fetchall()
         return result
 
 
@@ -138,9 +137,8 @@ def getproductcodes(vouchers, orderid, ordersku, itemid, customerid, createdat):
 
 
         ####Test to eliminate pre owned products from the list of products
-        ownedprods = ownedproducts(orderitem={'customer_id': customerid, 'voucherserial': vouchers, 'created_at': createdat})
-        # products = np.setdiff1d(products, ownedprods)
-        products = [x for x in products if x not in ownedprods]
+        # ownedprods = ownedproducts(orderitem={'customer_id': customerid, 'voucherserial': vouchers, 'created_at': createdat})
+        # products = [x for x in products if x not in ownedprods]
         ####End
 
         vouc['orderid'] = orderid
@@ -163,22 +161,29 @@ def getskusforprodcodes(vouc, SkuMap):
     # vouc has {'orderid': , 'voucherserial': , 'prodcodes': }
     skus=[]
     for prodcode in vouc['prodcodes']:
-        prodcode = str(prodcode[-4:])
+        prodcode = str(prodcode[-5:])
         for key, value in SkuMap.items():
             if prodcode == value:
                 skus.append(key)
     vouc['SKUs'] = skus
     prodcodes=[]
     for prodcode in vouc['prodcodes']:
-        prodcodes.append(prodcode[-4:])
+        prodcodes.append(prodcode[-5:])
 
     # print(SkuMap)
+    skuprods = {}
     ChildSkus = []
     for sku,prod in SkuMap.items():
         prod = prod.split(',')
         if len(list(set(prod).intersection(prodcodes))) == len(prod):
             # print(ChildSkus)
             ChildSkus.append(sku)
+            #TEST
+            for products in prod:
+                skuprods[int(products)] = sku
+
+
+            #END TEST
             # print(prodcodes)
             # print(np.setdiff1d(prodcodes,prod))
             prodcodes = np.setdiff1d(prodcodes,prod)
@@ -186,7 +191,11 @@ def getskusforprodcodes(vouc, SkuMap):
             # if len(prodcodes) >0:
             #     print("**** Diff prod codes")
             #     print(prodcodes)
+    print(skuprods)
+    vouc['skuprods'] = skuprods
 
+    ##Test for remaining products
+    print(prodcodes)
     vouc['ASPSkus'] = ChildSkus
     return vouc
 
@@ -199,14 +208,17 @@ def builddata(orderitem, product_catalog):
     :param product_catalog:
     :return:
     '''
-    print(orderitem)
+
+    ## Used for deciding on the list price
     owned_productcodes = []
     owned_products = ownedproducts(orderitem)
-    for prodcodes in owned_products:
-        owned_productcodes.append(int(prodcodes))
-    # print(owned_productcodes)
+    for prodcodes in owned_products['owned_productcodes']:
+        owned_productcodes.append(int(prodcodes[2:]))
+    print(owned_productcodes)
     print(len(orderitem['ASPSkus']))
-    for skus in orderitem['ASPSkus']:
+    print(orderitem)
+
+    for prod, skus in orderitem['skuprods'].items():
         data = {}
         data['purchase_type'] = 'store'
         data['order_id'] = orderitem['orderid']
@@ -214,6 +226,11 @@ def builddata(orderitem, product_catalog):
         data['customer_id'] = orderitem['customer_id']
         data['order_sku'] = orderitem['ordersku']
         data['voucher_serial'] = orderitem['voucherserial']
+        data['prodcode'] = prod
+        if prod in owned_productcodes:
+            data['status'] = 'owned'
+        else:
+            data['status'] = 'issued'
         data['sku'] = skus
         data['created_at']= '{:%Y-%m-%d %H:%M:%S}'.format(orderitem['created_at'])
 
@@ -257,7 +274,16 @@ def ownedproducts(orderitem):
     for prodcodes in owned_products:
         owned_productcodes.append(prodcodes['products_code'])
 
-    return owned_productcodes
+    print(owned_productcodes)
+
+    ## Testing .... Match royalty SKUS for the products owned
+    vouc ={'prodcodes': owned_productcodes}
+    ownedsks = getskusforprodcodes(vouc,buildskumap())
+    print("OwnedSKUs")
+    owned_productskus = ownedsks['ASPSkus']
+    owned_product = {'owned_productcodes': owned_productcodes, 'owned_productskus': owned_productskus }
+    print(owned_product)
+    return owned_product
 
 
 def catalogproducts():
