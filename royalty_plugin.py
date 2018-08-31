@@ -93,7 +93,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-31' 
-                    AND o.entity_id = 1216364
+                    AND o.entity_id = 1233964
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
