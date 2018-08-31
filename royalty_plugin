@@ -41,6 +41,7 @@ def buildskumap():
     :return: newskumap -> {SKU name : List of Products}
     '''
 
+
     # Query to build the SKU map from RDS
     with conn.cursor() as cursor:
         sql = """select  REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
