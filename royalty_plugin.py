@@ -19,14 +19,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '***********'
+    hostname = '*************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-<<<<<<< HEAD
-    psd = '***********'
-=======
-    psd = '****************'
->>>>>>> 2cf8ec25550c92a57650b06f2b9e9d8f9ddf50be
+    psd = '*************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -217,11 +213,7 @@ def builddata(orderitem, product_catalog):
     owned_productcodes = []
     owned_products = ownedproducts(orderitem)
     for prodcodes in owned_products['owned_productcodes']:
-<<<<<<< HEAD
         owned_productcodes.append(int(prodcodes[2:]))
-=======
-        owned_productcodes.append(int(prodcodes[3:]))
->>>>>>> 2cf8ec25550c92a57650b06f2b9e9d8f9ddf50be
     print(owned_productcodes)
     print(len(orderitem['ASPSkus']))
     print(orderitem)
