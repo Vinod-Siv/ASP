@@ -19,10 +19,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '*************'
+    hostname = '***************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '*************'
+    psd = '**************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -67,8 +67,6 @@ def buildskumap():
         newskumap = {}
         for ar in skumap:
             newskumap[revskumap[ar]] = ar
-        print('SKUMAP:')
-        print(newskumap)
         return newskumap
 
 
@@ -91,8 +89,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where voucher_type = 'purchase' 
-                    # AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-31' 
-                    AND o.entity_id = 1233964
+                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-31' 
+                    # AND o.entity_id = 598703
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -102,11 +100,20 @@ def getorders():
 
 def processorders(vouchers):
     SkuMap = buildskumap()
+    print('SKUMAP:')
+    print(SkuMap)
+
     product_catalog= catalogproducts()
+
     for order in vouchers:
-        vouc = getproductcodes(order['vouchers_serial'], order['entity_id'], order['sku'], order['item_id'], order['customer_id'], order['created_at'])
-        orderitem = getskusforprodcodes(vouc, SkuMap)
-        builddata(orderitem, product_catalog)
+        iscustom = customrorders(order['entity_id'])
+        if iscustom:
+            buildcustomdata(order, product_catalog)
+
+        else:
+            vouc = getproductcodes(order['vouchers_serial'], order['entity_id'], order['sku'], order['item_id'], order['customer_id'], order['created_at'])
+            orderitem = getskusforprodcodes(vouc, SkuMap)
+            builddata(orderitem, product_catalog)
 
 
 def getproductcodes(vouchers, orderid, ordersku, itemid, customerid, createdat):
@@ -191,13 +198,23 @@ def getskusforprodcodes(vouc, SkuMap):
             # if len(prodcodes) >0:
             #     print("**** Diff prod codes")
             #     print(prodcodes)
-    print(skuprods)
     vouc['skuprods'] = skuprods
-
-    ##Test for remaining products
-    print(prodcodes)
     vouc['ASPSkus'] = ChildSkus
     return vouc
+
+
+def customrorders(orderid):
+
+    with conn.cursor() as cursor:
+        sql = """select count(*) AS cnt
+                    FROM uaudio.uad_custom
+                    where orders_id = %s
+                    """
+        cursor.execute(sql, (orderid,))
+        result = cursor.fetchone()
+        if result['cnt'] > 0:
+            return True
+        return False
 
 
 def builddata(orderitem, product_catalog):
@@ -214,9 +231,8 @@ def builddata(orderitem, product_catalog):
     owned_products = ownedproducts(orderitem)
     for prodcodes in owned_products['owned_productcodes']:
         owned_productcodes.append(int(prodcodes[2:]))
-    print(owned_productcodes)
-    print(len(orderitem['ASPSkus']))
-    print(orderitem)
+
+    # print(orderitem)
 
     for prod, skus in orderitem['skuprods'].items():
         data = {}
@@ -254,6 +270,56 @@ def builddata(orderitem, product_catalog):
         print(data)
 
 
+def buildcustomdata(order, product_catalog):
+    """
+
+    :param order:
+    :return:
+    """
+    with conn.cursor() as cursor:
+        sql = """   SELECT c.*
+                    FROM uaudio.uad_custom c LEFT JOIN uaudio.vouchers v
+                    ON (c.vouchers_serial = v.vouchers_serial AND v.voucher_type = 'purchase')
+                    WHERE c.orders_id = %s
+                    """
+        cursor.execute(sql, (order['entity_id'],))
+        custom_rec = cursor.fetchall()
+    # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
+
+    for custrec in custom_rec:
+        with conn.cursor() as cursor:
+            sql = """select cr.*
+                    from uaudio.uad_custom_redeem cr
+                    where custom_id = %s
+                    ORDER BY date DESC
+                    LIMIT %s       
+             """
+            cursor.execute(sql, (custrec['id'], custrec['number_plugins'],))
+            records = cursor.fetchall()
+            # print(records)
+            # print(order)
+            for orderitem in records:
+                data = {}
+                data['purchase_type'] = 'store'
+                data['item_type'] = 'custom'
+                data['order_id'] = order['entity_id']
+                data['item_id'] = order['item_id']
+                data['custom_id'] = orderitem['id']
+                data['customer_id'] = order['customer_id']
+                data['order_sku'] = order['sku']
+                data['voucher_serial'] = order['vouchers_serial']
+                data['custom_serial'] = orderitem['vouchers_serial']
+                # data['prodcode'] = prod
+                # if prod in owned_productcodes:
+                #     data['status'] = 'owned'
+                # else:
+                #     data['status'] = 'issued'
+                data['sku'] = orderitem['sku'].replace('UAD-2', 'UAD')
+                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(order['created_at'])
+                data['list_price'] = product_catalog.at[data['sku'], 'price']
+                print(data)
+
+
 def ownedproducts(orderitem):
     '''
     Queries the database to get the list of prodcodes owned by the customer which is not part of
@@ -274,15 +340,11 @@ def ownedproducts(orderitem):
     for prodcodes in owned_products:
         owned_productcodes.append(prodcodes['products_code'])
 
-    print(owned_productcodes)
-
     ## Testing .... Match royalty SKUS for the products owned
     vouc ={'prodcodes': owned_productcodes}
     ownedsks = getskusforprodcodes(vouc,buildskumap())
-    print("OwnedSKUs")
     owned_productskus = ownedsks['ASPSkus']
     owned_product = {'owned_productcodes': owned_productcodes, 'owned_productskus': owned_productskus }
-    print(owned_product)
     return owned_product
 
 
