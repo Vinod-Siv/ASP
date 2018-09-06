@@ -19,10 +19,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '***************'
+    hostname = '*****************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '**************'
+    psd = '*****************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -89,8 +89,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-31' 
-                    # AND o.entity_id = 598703
+                    # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
+                    AND o.entity_id = 1063003
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -186,8 +186,9 @@ def getskusforprodcodes(vouc, SkuMap):
             # print(ChildSkus)
             ChildSkus.append(sku)
             #TEST
-            for products in prod:
-                skuprods[int(products)] = sku
+            # for products in prod:
+            #     skuprods[int(products)] = sku
+            skuprods[sku] = prod
 
 
             #END TEST
@@ -229,45 +230,53 @@ def builddata(orderitem, product_catalog):
     ## Used for deciding on the list price
     owned_productcodes = []
     owned_products = ownedproducts(orderitem)
-    for prodcodes in owned_products['owned_productcodes']:
+    for prodcodes in owned_products:
         owned_productcodes.append(int(prodcodes[2:]))
 
-    # print(orderitem)
+    print("Test for  !!!!")
+    totallistprice = listpricesum(orderitem, product_catalog, owned_productcodes)
+    print(totallistprice)
 
-    for prod, skus in orderitem['skuprods'].items():
-        data = {}
-        data['purchase_type'] = 'store'
-        data['order_id'] = orderitem['orderid']
-        data['item_id'] = orderitem['item_id']
-        data['customer_id'] = orderitem['customer_id']
-        data['order_sku'] = orderitem['ordersku']
-        data['voucher_serial'] = orderitem['voucherserial']
-        data['prodcode'] = prod
-        if prod in owned_productcodes:
-            data['status'] = 'owned'
+
+    for skus, prod in orderitem['skuprods'].items():
+        prod=[int(x) for x in prod]
+        if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
+            continue
         else:
-            data['status'] = 'issued'
-        data['sku'] = skus
-        data['created_at']= '{:%Y-%m-%d %H:%M:%S}'.format(orderitem['created_at'])
 
-        # List Price
-        # For every SKU, if the customer already owns the products (in owner sku) from catalog products.
-        # If yes, considers owner_discount as list price else choose price as list_price
+            data = {}
+            data['purchase_type'] = 'store'
+            data['order_id'] = orderitem['orderid']
+            data['item_id'] = orderitem['item_id']
+            data['customer_id'] = orderitem['customer_id']
+            data['order_sku'] = orderitem['ordersku']
+            data['voucher_serial'] = orderitem['voucherserial']
+            # data['prodcode'] = prod
+            # if prod in owned_productcodes:
+            #     data['status'] = 'owned'
+            # else:
+            #     data['status'] = 'issued'
+            data['sku'] = skus
+            data['created_at']= '{:%Y-%m-%d %H:%M:%S}'.format(orderitem['created_at'])
 
-        ownersku = product_catalog.at[skus, 'owner_sku']
-        if ownersku:
-            ownersku = list(ownersku.split(','))
-        listprice = product_catalog.at[skus, 'price']
+            # List Price
+            # For every SKU, if the customer already owns the products (in owner sku) from catalog products.
+            # If yes, considers owner_discount as list price else choose price as list_price
+            ownersku = product_catalog.at[skus, 'owner_sku']
+            if ownersku:
+                ownersku = list(ownersku.split(','))
+            listprice = product_catalog.at[skus, 'price']
 
-        if ownersku:
-            for prodcodes in ownersku:
-                prodcode = int(prodcodes[2:])
-                if prodcode in owned_productcodes:
-                    listprice = product_catalog.at[skus, 'owner_discount']
+            if ownersku:
+                for prodcodes in ownersku:
+                    prodcode = int(prodcodes[2:])
+                    if prodcode in owned_productcodes:
+                        listprice = product_catalog.at[skus, 'owner_discount']
 
 
-        data['list_price'] = '{0:.2f}'.format(listprice)
-        print(data)
+            data['list_price'] = '{0:.2f}'.format(listprice)
+            data['pro_rata'] = round((listprice/totallistprice),3)
+            print(data)
 
 
 def buildcustomdata(order, product_catalog):
@@ -341,11 +350,11 @@ def ownedproducts(orderitem):
         owned_productcodes.append(prodcodes['products_code'])
 
     ## Testing .... Match royalty SKUS for the products owned
-    vouc ={'prodcodes': owned_productcodes}
-    ownedsks = getskusforprodcodes(vouc,buildskumap())
-    owned_productskus = ownedsks['ASPSkus']
-    owned_product = {'owned_productcodes': owned_productcodes, 'owned_productskus': owned_productskus }
-    return owned_product
+    # vouc ={'prodcodes': owned_productcodes}
+    # ownedsks = getskusforprodcodes(vouc,buildskumap())
+    # owned_productskus = ownedsks['ASPSkus']
+    # owned_product = {'owned_productcodes': owned_productcodes, 'owned_productskus': owned_productskus }
+    return owned_productcodes
 
 
 def catalogproducts():
@@ -372,6 +381,27 @@ def catalogproducts():
     print('\n Product Catalog :')
     print(product_catalog)
     return product_catalog
+
+
+def listpricesum(orderitem, product_catalog, owned_productcodes):
+    totallistprice = 0
+    for skus, prod in orderitem['skuprods'].items():
+        prod = [int(x) for x in prod]
+        if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
+            continue
+        else:
+            ownersku = product_catalog.at[skus, 'owner_sku']
+            if ownersku:
+                ownersku = list(ownersku.split(','))
+            listprice = product_catalog.at[skus, 'price']
+
+            if ownersku:
+                for prodcodes in ownersku:
+                    prodcode = int(prodcodes[2:])
+                    if prodcode in owned_productcodes:
+                        listprice = product_catalog.at[skus, 'owner_discount']
+        totallistprice += listprice
+    return totallistprice
 
 
 if __name__ == '__main__':
