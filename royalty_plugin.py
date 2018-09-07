@@ -19,10 +19,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '****************'
+    hostname = '**************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '****************'
+    psd = '**************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -82,14 +82,13 @@ def getorders():
     # state/status - one of them has to be updated in the query
 
     with conn.cursor() as cursor:
-        sql = """select distinct v.vouchers_serial, o.entity_id, i.sku, i.item_id, o.customer_id, i.created_at
+        sql = """select distinct v.vouchers_serial, v.voucher_type, o.entity_id, i.sku, i.item_id, o.customer_id, i.created_at
                     from uaudio.vouchers v 
                     JOIN uaudio.sales_flat_order o 
                     ON v.vouchers_purchase_ordernum = o.entity_id
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
-                    where voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
+                    where vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
                     # AND o.entity_id = 598703
                     AND o.state = 'complete' AND status = 'complete'
                     """
@@ -106,17 +105,21 @@ def processorders(vouchers):
     product_catalog= catalogproducts()
 
     for order in vouchers:
-        iscustom = customrorders(order['entity_id'])
-        if iscustom:
-            buildcustomdata(order, product_catalog)
+        if order['voucher_type'] == 'purchase':
+            iscustom = customrorders(order['entity_id'])
+            if iscustom:
+                buildcustomdata(order, product_catalog)
 
+            else:
+                vouc = getproductcodes(order['vouchers_serial'], order['voucher_type'], order['entity_id'], order['sku'], order['item_id'], order['customer_id'], order['created_at'])
+                orderitem = getskusforprodcodes(vouc, SkuMap)
+                builddata(orderitem, product_catalog)
         else:
-            vouc = getproductcodes(order['vouchers_serial'], order['entity_id'], order['sku'], order['item_id'], order['customer_id'], order['created_at'])
-            orderitem = getskusforprodcodes(vouc, SkuMap)
-            builddata(orderitem, product_catalog)
+            print("Not Store")
+            print(order)
 
 
-def getproductcodes(vouchers, orderid, ordersku, itemid, customerid, createdat):
+def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customerid, createdat):
     '''
     Using voucher serial, list of product codes associated is retrieved
     :param vouchers:
@@ -153,6 +156,7 @@ def getproductcodes(vouchers, orderid, ordersku, itemid, customerid, createdat):
         vouc['customer_id'] = customerid
         vouc['ordersku'] = ordersku
         vouc['voucherserial'] = vouchers
+        vouc['voucher_type'] = voucher_type
         vouc['created_at'] = createdat
         vouc['prodcodes'] = products
     return vouc
@@ -390,6 +394,7 @@ def catalogproducts():
     print('\n Product Catalog :')
     print(product_catalog)
     return product_catalog
+
 
 
 def listpricesum(orderitem, product_catalog, owned_productcodes):
