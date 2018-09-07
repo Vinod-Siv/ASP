@@ -19,10 +19,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '*****************'
+    hostname = '****************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '*****************'
+    psd = '****************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -89,8 +89,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where voucher_type = 'purchase' 
-                    # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 1063003
+                    AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
+                    # AND o.entity_id = 598703
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -275,7 +275,7 @@ def builddata(orderitem, product_catalog):
 
 
             data['list_price'] = '{0:.2f}'.format(listprice)
-            data['pro_rata'] = round((listprice/totallistprice),3)
+            data['pro_rata'] = round((listprice / totallistprice), 3)
             print(data)
 
 
@@ -307,6 +307,14 @@ def buildcustomdata(order, product_catalog):
             records = cursor.fetchall()
             # print(records)
             # print(order)
+            totallisprice = 0
+            for orderitem in records:
+                sku = orderitem['sku'].replace('UAD-2', 'UAD')
+                listprice = product_catalog.at[sku, 'price']
+                totallisprice += listprice
+            print(totallisprice)
+
+
             for orderitem in records:
                 data = {}
                 data['purchase_type'] = 'store'
@@ -326,6 +334,7 @@ def buildcustomdata(order, product_catalog):
                 data['sku'] = orderitem['sku'].replace('UAD-2', 'UAD')
                 data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(order['created_at'])
                 data['list_price'] = product_catalog.at[data['sku'], 'price']
+                data['pro_rata'] = round(data['list_price']/totallisprice,3)
                 print(data)
 
 
