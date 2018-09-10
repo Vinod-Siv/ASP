@@ -2,6 +2,7 @@ import pymysql
 import numpy as np
 import pandas as pd
 import boto3
+import psycopg2
 
 
 def dbconnection():
@@ -30,7 +31,15 @@ def dbconnection():
         password=psd,
         cursorclass=pymysql.cursors.DictCursor
     )
-    return conn
+
+    conn1 = psycopg2.connect(
+        dbname= 'uaudio',
+        host='bizappsredshift.cmlafnptibhc.us-west-2.redshift.amazonaws.com',
+        port= '5439',
+        user= 'uadbadmin',
+        password= 'uWb6~ha-{mbi')
+
+    return conn, conn1
 
 
 def buildskumap():
@@ -88,8 +97,9 @@ def getorders():
                     ON v.vouchers_purchase_ordernum = o.entity_id
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
-                    where vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    # AND o.entity_id = 598703
+                    where v.voucher_type='purchase' 
+                    AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
+                    # AND o.entity_id = 1191915
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -97,7 +107,7 @@ def getorders():
         return result
 
 
-def processorders(vouchers):
+def processorders(vouchers, conn1):
     SkuMap = buildskumap()
     print('SKUMAP:')
     print(SkuMap)
@@ -107,13 +117,14 @@ def processorders(vouchers):
     for order in vouchers:
         if order['voucher_type'] == 'purchase':
             iscustom = customrorders(order['entity_id'])
-            if iscustom:
-                buildcustomdata(order, product_catalog)
+            if (iscustom and order['sku'][:10] == 'UAD-CUSTOM'):
+                customorderrecord(order, product_catalog, conn1)
+                buildcustomdata(order, product_catalog, conn1)
 
             else:
                 vouc = getproductcodes(order['vouchers_serial'], order['voucher_type'], order['entity_id'], order['sku'], order['item_id'], order['customer_id'], order['created_at'])
                 orderitem = getskusforprodcodes(vouc, SkuMap)
-                builddata(orderitem, product_catalog)
+                builddata(orderitem, product_catalog, conn1)
         else:
             print("Not Store")
             print(order)
@@ -222,7 +233,30 @@ def customrorders(orderid):
         return False
 
 
-def builddata(orderitem, product_catalog):
+def customorderrecord(order, product_catalog, conn1):
+
+    data = {}
+    data['purchase_type'] = 'store'
+    data['item_type'] = 'custom'
+    data['order_id'] = order['entity_id']
+    # data['item_id'] =
+    data['customer_id'] = order['customer_id']
+    data['order_sku'] = order['sku']
+    data['voucher_serial'] = order['vouchers_serial']
+    data['created_at'] = order['created_at']
+    data['list_price'] = 0
+
+    cur = conn1.cursor()
+    insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
+    cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
+                              0, data['customer_id'], data['order_sku'],
+                              data['voucher_serial'], '',
+                              '', data['created_at'], data['list_price'], ''))
+    conn1.commit()
+    print(data)
+
+
+def builddata(orderitem, product_catalog, conn1):
     '''
     Takes each order line and break down into the multiple entries (one for each ASP Sku)
     refers product catalog and matches the list price
@@ -237,7 +271,6 @@ def builddata(orderitem, product_catalog):
     for prodcodes in owned_products:
         owned_productcodes.append(int(prodcodes[2:]))
 
-    print("Test for  !!!!")
     totallistprice = listpricesum(orderitem, product_catalog, owned_productcodes)
     print(totallistprice)
 
@@ -279,11 +312,20 @@ def builddata(orderitem, product_catalog):
 
 
             data['list_price'] = '{0:.2f}'.format(listprice)
-            data['pro_rata'] = round((listprice / totallistprice), 3)
+            data['pro_rata'] = round((listprice / totallistprice)*100, 2)
+
+            ##Data Insertion
+            cur = conn1.cursor()
+            insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
+            cur.execute(insert_quey, (data['purchase_type'], 'purchase', data['order_id'],
+                                data['item_id'], data['customer_id'], data['order_sku'], data['voucher_serial'],'',
+                                data['sku'], data['created_at'], data['list_price'], data['pro_rata']))
+            conn1.commit()
             print(data)
 
 
-def buildcustomdata(order, product_catalog):
+
+def buildcustomdata(order, product_catalog, conn1):
     """
 
     :param order:
@@ -300,6 +342,19 @@ def buildcustomdata(order, product_catalog):
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
     for custrec in custom_rec:
+
+        ## Test
+        # print("Test !!!!!")
+        # print(custrec)
+        # with conn1.cursor() as cursor1:
+        #     sql = """ SELECT * FROM public.royalty
+        #     WHERE order_id = %s
+        #     AND item_type = 'custom'
+        #     """
+        #     cursor1.execute(sql, custrec['orders_id'])
+        #     oldrecords = cursor1.fetchone()
+        #     print(oldrecords)
+
         with conn.cursor() as cursor:
             sql = """select cr.*
                     from uaudio.uad_custom_redeem cr
@@ -310,19 +365,20 @@ def buildcustomdata(order, product_catalog):
             cursor.execute(sql, (custrec['id'], custrec['number_plugins'],))
             records = cursor.fetchall()
             # print(records)
-            # print(order)
+
             totallisprice = 0
             for orderitem in records:
                 sku = orderitem['sku'].replace('UAD-2', 'UAD')
                 listprice = product_catalog.at[sku, 'price']
                 totallisprice += listprice
-            print(totallisprice)
 
+            # buildcustomdata(custrec, product_catalog)
+            print(records)
 
             for orderitem in records:
                 data = {}
                 data['purchase_type'] = 'store'
-                data['item_type'] = 'custom'
+                data['item_type'] = 'custom-redeem'
                 data['order_id'] = order['entity_id']
                 data['item_id'] = order['item_id']
                 data['custom_id'] = orderitem['id']
@@ -336,10 +392,20 @@ def buildcustomdata(order, product_catalog):
                 # else:
                 #     data['status'] = 'issued'
                 data['sku'] = orderitem['sku'].replace('UAD-2', 'UAD')
-                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(order['created_at'])
+                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(custrec['redeem_date'])
                 data['list_price'] = product_catalog.at[data['sku'], 'price']
-                data['pro_rata'] = round(data['list_price']/totallisprice,3)
+                data['pro_rata'] = round((data['list_price']/totallisprice)*100,2)
+
+                cur = conn1.cursor()
+                insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
+                cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
+                                          data['item_id'], data['customer_id'], data['order_sku'],
+                                          data['voucher_serial'], data['custom_serial'],
+                                          data['sku'], data['created_at'], data['list_price'], data['pro_rata']))
+                conn1.commit()
+
                 print(data)
+
 
 
 def ownedproducts(orderitem):
@@ -419,6 +485,6 @@ def listpricesum(orderitem, product_catalog, owned_productcodes):
 
 
 if __name__ == '__main__':
-    conn = dbconnection()
+    conn, conn1 = dbconnection()
     vouchers = getorders()
-    processorders(vouchers)
+    processorders(vouchers, conn1)
