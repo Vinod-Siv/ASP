@@ -20,10 +20,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '**************'
+    hostname = '************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '**************'
+    psd = '************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -98,8 +98,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type='purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    # AND o.entity_id = 1191915
+                    # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
+                    AND o.entity_id = 1191915
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -244,7 +244,7 @@ def customorderrecord(order, product_catalog, conn1):
     data['order_sku'] = order['sku']
     data['voucher_serial'] = order['vouchers_serial']
     data['created_at'] = order['created_at']
-    data['list_price'] = 0
+    data['list_price'] = 1
 
     cur = conn1.cursor()
     insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
@@ -344,16 +344,16 @@ def buildcustomdata(order, product_catalog, conn1):
     for custrec in custom_rec:
 
         ## Test
-        # print("Test !!!!!")
-        # print(custrec)
-        # with conn1.cursor() as cursor1:
-        #     sql = """ SELECT * FROM public.royalty
-        #     WHERE order_id = %s
-        #     AND item_type = 'custom'
-        #     """
-        #     cursor1.execute(sql, custrec['orders_id'])
-        #     oldrecords = cursor1.fetchone()
-        #     print(oldrecords)
+        print("Test !!!!!")
+        with conn1.cursor() as cursor1:
+
+            sql=""" INSERT INTO public.royalty (SELECT purchase_type,item_type, order_id, item_id, customer_id, 
+                        order_sku, voucher_serial, custom_serial, sku, created_at, (list_price)* -1 , pro_rata
+                        FROM public.royalty)
+            """
+            cursor1.execute(sql)
+
+        ### END TEST
 
         with conn.cursor() as cursor:
             sql = """select cr.*
