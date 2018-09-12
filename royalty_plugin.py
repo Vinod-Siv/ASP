@@ -99,7 +99,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 1217269
+                    AND o.entity_id = 1192049
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -271,7 +271,7 @@ def builddata(orderitem, product_catalog, conn1):
     for prodcodes in owned_products:
         owned_productcodes.append(int(prodcodes[2:]))
 
-    totallistprice = listpricesum(orderitem, product_catalog)
+    totallistprice = listpricesum(orderitem, product_catalog, owned_productcodes)
     # print(totallistprice)
 
     for skus, prod in orderitem['skuprods'].items():
@@ -342,10 +342,6 @@ def buildcustomdata(order, product_catalog, conn1):
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
     for custrec in custom_rec:
-
-        ## Test
-        print("Test")
-        print(custrec)
         with conn1.cursor() as cursor1:
 
             sql = """ SELECT purchase_type,item_type, order_id, item_id, customer_id,
@@ -472,30 +468,30 @@ def catalogproducts():
 
 
 
-def listpricesum(orderitem, product_catalog):
-
-    totallistprice = 0
-    for skus in orderitem['skuprods'].keys():
-        listprice = product_catalog.at[skus, 'price']
-        totallistprice += listprice
+def listpricesum(orderitem, product_catalog, owned_productcodes):
 
     # totallistprice = 0
-    # for skus, prod in orderitem['skuprods'].items():
-    #     prod = [int(x) for x in prod]
-    #     if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
-    #         continue
-    #     else:
+    # for skus in orderitem['skuprods'].keys():
+    #     listprice = product_catalog.at[skus, 'price']
+    #     totallistprice += listprice
+
+    totallistprice = 0
+    for skus, prod in orderitem['skuprods'].items():
+        prod = [int(x) for x in prod]
+        if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
+            continue
+        else:
     #         ownersku = product_catalog.at[skus, 'owner_sku']
     #         if ownersku:
     #             ownersku = list(ownersku.split(','))
-    #         listprice = product_catalog.at[skus, 'price']
+            listprice = product_catalog.at[skus, 'price']
     #
     #         if ownersku:
     #             for prodcodes in ownersku:
     #                 prodcode = int(prodcodes[2:])
     #                 if prodcode in owned_productcodes:
     #                     listprice = product_catalog.at[skus, 'owner_discount']
-    #     totallistprice += listprice
+        totallistprice += listprice
     return totallistprice
 
 
