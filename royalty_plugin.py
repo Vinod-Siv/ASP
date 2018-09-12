@@ -20,10 +20,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '************'
+    hostname = '*************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '************'
+    psd = '*************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -99,7 +99,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 795560
+                    AND o.entity_id = 1232752
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -274,6 +274,11 @@ def builddata(orderitem, product_catalog, conn1):
     totallistprice = listpricesum(orderitem, product_catalog, owned_productcodes)
     # print(totallistprice)
 
+    print("Test !!!!!")
+    print(orderitem)
+    dollars = getinvoiceitemdetails(orderitem['orderid'], orderitem['item_id'])
+    print(dollars)
+
     for skus, prod in orderitem['skuprods'].items():
         prod=[int(x) for x in prod]
         if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
@@ -341,6 +346,12 @@ def buildcustomdata(order, product_catalog, conn1):
         custom_rec = cursor.fetchall()
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
+
+    print("Test !!!!!")
+    print(order)
+    dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
+    print(dollars)
+
     for custrec in custom_rec:
         with conn1.cursor() as cursor1:
 
@@ -378,7 +389,6 @@ def buildcustomdata(order, product_catalog, conn1):
                 totallistprice += listprice
 
             # buildcustomdata(custrec, product_catalog)
-            print(records)
 
             for orderitem in records:
                 data = {}
@@ -408,7 +418,6 @@ def buildcustomdata(order, product_catalog, conn1):
                                           data['voucher_serial'], data['custom_serial'],
                                           data['sku'], data['created_at'], data['list_price'], data['pro_rata']))
                 conn1.commit()
-
                 print(data)
 
 
@@ -493,6 +502,20 @@ def listpricesum(orderitem, product_catalog, owned_productcodes):
     #                     listprice = product_catalog.at[skus, 'owner_discount']
         totallistprice += listprice
     return totallistprice
+
+def getinvoiceitemdetails(order_id, item_id):
+    with conn.cursor() as cursor:
+        sql = """select it.price_incl_tax, it.base_price_incl_tax, it.tax_amount, it.base_tax_amount,
+                    it.discount_amount, it. base_discount_amount, i.order_currency_code, i.base_currency_code 
+                    from uaudio.sales_flat_order o
+                    join uaudio.sales_flat_order_item ot on o.entity_id = ot.order_id
+                    join uaudio.sales_flat_invoice i on o.entity_id = i.order_id
+                    left outer join uaudio.sales_flat_invoice_item it on (i.entity_id = it.parent_id and ot.item_id = it.order_item_id)
+                    where o.entity_id = %s AND it.order_item_id = %s        
+        """
+        cursor.execute(sql, (order_id, item_id,))
+        dollarvalues = cursor.fetchall()
+        return dollarvalues
 
 
 if __name__ == '__main__':
