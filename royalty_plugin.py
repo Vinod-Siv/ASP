@@ -20,10 +20,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '**************'
+    hostname = '************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '**************'
+    psd = '************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -99,7 +99,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 1192049
+                    AND o.entity_id = 795560
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -312,7 +312,7 @@ def builddata(orderitem, product_catalog, conn1):
 
 
             data['list_price'] = '{0:.2f}'.format(listprice)
-            data['pro_rata'] = round((listprice / totallistprice)*100, 2)
+            data['pro_rata'] = '{0:.3f}'.format((listprice / totallistprice)*100)
 
             ##Data Insertion
             cur = conn1.cursor()
@@ -371,11 +371,11 @@ def buildcustomdata(order, product_catalog, conn1):
             records = cursor.fetchall()
             # print(records)
 
-            totallisprice = 0
+            totallistprice = 0
             for orderitem in records:
                 sku = orderitem['sku'].replace('UAD-2', 'UAD')
                 listprice = product_catalog.at[sku, 'price']
-                totallisprice += listprice
+                totallistprice += listprice
 
             # buildcustomdata(custrec, product_catalog)
             print(records)
@@ -399,7 +399,7 @@ def buildcustomdata(order, product_catalog, conn1):
                 data['sku'] = orderitem['sku'].replace('UAD-2', 'UAD')
                 data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(custrec['redeem_date'])
                 data['list_price'] = product_catalog.at[data['sku'], 'price']
-                data['pro_rata'] = round((data['list_price']/totallisprice)*100,2)
+                data['pro_rata'] = '{0:.3f}'.format((data['list_price'] / totallistprice)*100)
 
                 cur = conn1.cursor()
                 insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
