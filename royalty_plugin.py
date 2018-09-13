@@ -20,10 +20,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '**********'
+    hostname = '************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '**********'
+    psd = '************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -34,10 +34,10 @@ def dbconnection():
 
     conn1 = psycopg2.connect(
         dbname= 'uaudio',
-        host='**********',
+        host='************',
         port= '5439',
         user= 'uadbadmin',
-        password= '**********')
+        password= '************')
 
     return conn, conn1
 
@@ -99,7 +99,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 795560
+                    AND o.entity_id = 1232752
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -256,19 +256,18 @@ def customorderrecord(order, dollars,  conn1):
     data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount'])
     data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount'])
     data['order_currency_code'] = dollars[0]['order_currency_code']
-    data['base_currency_code'] = dollars[0]['base_currency_code']
 
 
     cur = conn1.cursor()
     insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
-                                                        ,%s, %s,%s, %s, %s,%s, %s, %s)"""
+                                                        ,%s, %s,%s, %s, %s,%s, %s)"""
     cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                               0, data['customer_id'], data['order_sku'],
                               data['voucher_serial'], '', '', data['created_at'], 0,
                               0, data['price_incl_tax'], data['base_price_incl_tax'],
                               data['tax_amount'], data['base_tax_amount'],
                               data['discount_amount'], data['base_discount_amount'],
-                              data['order_currency_code'], data['base_currency_code'], ))
+                              data['order_currency_code'], ))
     conn1.commit()
     print(data)
 
@@ -338,19 +337,18 @@ def builddata(orderitem, product_catalog,dollars, conn1):
             data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount']) * prorata
             data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
             data['order_currency_code'] = dollars[0]['order_currency_code']
-            data['base_currency_code'] = dollars[0]['base_currency_code']
 
             ##Data Insertion
             cur = conn1.cursor()
             insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
-                                                                ,%s, %s,%s, %s, %s,%s, %s, %s)"""
+                                                                ,%s, %s,%s, %s, %s,%s, %s)"""
             cur.execute(insert_quey, (data['purchase_type'], 'purchase', data['order_id'],
                                 data['item_id'], data['customer_id'], data['order_sku'], data['voucher_serial'],'',
                                 data['sku'], data['created_at'], data['list_price'],
                                 data['pro_rata'], data['price_incl_tax'], data['base_price_incl_tax'],
                                 data['tax_amount'], data['base_tax_amount'],
                                 data['discount_amount'], data['base_discount_amount'],
-                                data['order_currency_code'],data['base_currency_code'], ))
+                                data['order_currency_code'], ))
             conn1.commit()
             print(data)
 
@@ -378,7 +376,7 @@ def buildcustomdata(order, product_catalog,dollars, conn1):
             sql = """ SELECT purchase_type,item_type, order_id, item_id, customer_id,
                         order_sku, voucher_serial, custom_serial, sku, created_at, (list_price)* -1 , pro_rata,
                         price_incl_tax * -1, base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1,
-                        discount_amount * -1, base_discount_amount * -1, order_currency_code, base_currency_code
+                        discount_amount * -1, base_discount_amount * -1, order_currency_code
                         FROM public.royalty
                         WHERE order_id = %s AND item_type = 'custom'
                     """
@@ -440,12 +438,11 @@ def buildcustomdata(order, product_catalog,dollars, conn1):
                 data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount']) * prorata
                 data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
                 data['order_currency_code'] = dollars[0]['order_currency_code']
-                data['base_currency_code'] = dollars[0]['base_currency_code']
 
 
                 cur = conn1.cursor()
                 insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s ,
-                                                                    %s, %s,%s, %s, %s,%s, %s, %s)"""
+                                                                    %s, %s,%s, %s, %s,%s, %s)"""
                 cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                                           data['item_id'], data['customer_id'], data['order_sku'],
                                           data['voucher_serial'], data['custom_serial'],
@@ -453,7 +450,7 @@ def buildcustomdata(order, product_catalog,dollars, conn1):
                                           data['pro_rata'], data['price_incl_tax'], data['base_price_incl_tax'],
                                           data['tax_amount'], data['base_tax_amount'],
                                           data['discount_amount'], data['base_discount_amount'],
-                                          data['order_currency_code'],data['base_currency_code'], ))
+                                          data['order_currency_code'], ))
                 conn1.commit()
                 print(data)
 
@@ -543,7 +540,7 @@ def listpricesum(orderitem, product_catalog, owned_productcodes):
 def getinvoiceitemdetails(order_id, item_id):
     with conn.cursor() as cursor:
         sql = """select it.price_incl_tax, it.base_price_incl_tax, it.tax_amount, it.base_tax_amount,
-                    it.discount_amount, it. base_discount_amount, i.order_currency_code, i.base_currency_code 
+                    it.discount_amount, it. base_discount_amount, i.order_currency_code 
                     from uaudio.sales_flat_order o
                     join uaudio.sales_flat_order_item ot on o.entity_id = ot.order_id
                     join uaudio.sales_flat_invoice i on o.entity_id = i.order_id
