@@ -99,7 +99,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 1232752
+                    AND o.entity_id = 1238893
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -394,9 +394,9 @@ def buildcustomdata(order, product_catalog,dollars, conn1):
         with conn.cursor() as cursor:
             sql = """select cr.*
                     from uaudio.uad_custom_redeem cr
-                    where custom_id = %s
+                    where custom_id = %s AND qty = 1
                     ORDER BY date DESC
-                    LIMIT %s       
+                    LIMIT %s      
              """
             cursor.execute(sql, (custrec['id'], custrec['number_plugins'],))
             records = cursor.fetchall()
