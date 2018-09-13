@@ -20,10 +20,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '************'
+    hostname = '**********'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '************'
+    psd = '**********'
 
     conn = pymysql.connect(
         host=hostname,
@@ -34,10 +34,10 @@ def dbconnection():
 
     conn1 = psycopg2.connect(
         dbname= 'uaudio',
-        host='bizappsredshift.cmlafnptibhc.us-west-2.redshift.amazonaws.com',
+        host='**********',
         port= '5439',
         user= 'uadbadmin',
-        password= 'uWb6~ha-{mbi')
+        password= '**********')
 
     return conn, conn1
 
@@ -99,7 +99,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 1192172
+                    AND o.entity_id = 795560
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -115,16 +115,21 @@ def processorders(vouchers, conn1):
     product_catalog= catalogproducts()
 
     for order in vouchers:
+        print("Test !!!! ")
+        print(order)
+        dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
+        print(dollars)
+
         if order['voucher_type'] == 'purchase':
             iscustom = customrorders(order['entity_id'])
             if (iscustom and order['sku'][:10] == 'UAD-CUSTOM'):
-                customorderrecord(order, product_catalog, conn1)
-                buildcustomdata(order, product_catalog, conn1)
+                customorderrecord(order, dollars, conn1)
+                buildcustomdata(order, product_catalog,dollars, conn1)
 
             else:
                 vouc = getproductcodes(order['vouchers_serial'], order['voucher_type'], order['entity_id'], order['sku'], order['item_id'], order['customer_id'], order['created_at'])
                 orderitem = getskusforprodcodes(vouc, SkuMap)
-                builddata(orderitem, product_catalog, conn1)
+                builddata(orderitem, product_catalog,dollars, conn1)
         else:
             print("Not Store")
             print(order)
@@ -233,7 +238,7 @@ def customrorders(orderid):
         return False
 
 
-def customorderrecord(order, product_catalog, conn1):
+def customorderrecord(order, dollars,  conn1):
 
     data = {}
     data['purchase_type'] = 'store'
@@ -244,19 +249,31 @@ def customorderrecord(order, product_catalog, conn1):
     data['order_sku'] = order['sku']
     data['voucher_serial'] = order['vouchers_serial']
     data['created_at'] = order['created_at']
-    data['list_price'] = 1
+    data['price_incl_tax'] = float(0 if dollars[0]['price_incl_tax'] is None else dollars[0]['price_incl_tax'])
+    data['base_price_incl_tax'] = float(0 if dollars[0]['base_price_incl_tax'] is None else dollars[0]['base_price_incl_tax'])
+    data['tax_amount'] = float(0 if dollars[0]['tax_amount'] is None else dollars[0]['tax_amount'])
+    data['base_tax_amount'] = float(0 if dollars[0]['base_tax_amount'] is None else dollars[0]['base_tax_amount'])
+    data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount'])
+    data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount'])
+    data['order_currency_code'] = dollars[0]['order_currency_code']
+    data['base_currency_code'] = dollars[0]['base_currency_code']
+
 
     cur = conn1.cursor()
-    insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s)"""
+    insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
+                                                        ,%s, %s,%s, %s, %s,%s, %s, %s)"""
     cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                               0, data['customer_id'], data['order_sku'],
-                              data['voucher_serial'], '',
-                              '', data['created_at'], data['list_price']), )
+                              data['voucher_serial'], '', '', data['created_at'], 0,
+                              0, data['price_incl_tax'], data['base_price_incl_tax'],
+                              data['tax_amount'], data['base_tax_amount'],
+                              data['discount_amount'], data['base_discount_amount'],
+                              data['order_currency_code'], data['base_currency_code'], ))
     conn1.commit()
     print(data)
 
 
-def builddata(orderitem, product_catalog, conn1):
+def builddata(orderitem, product_catalog,dollars, conn1):
     '''
     Takes each order line and break down into the multiple entries (one for each ASP Sku)
     refers product catalog and matches the list price
@@ -273,11 +290,6 @@ def builddata(orderitem, product_catalog, conn1):
 
     totallistprice = listpricesum(orderitem, product_catalog, owned_productcodes)
     # print(totallistprice)
-
-    print("Test !!!!!")
-    print(orderitem)
-    dollars = getinvoiceitemdetails(orderitem['orderid'], orderitem['item_id'])
-    print(dollars)
 
     for skus, prod in orderitem['skuprods'].items():
         prod=[int(x) for x in prod]
@@ -344,7 +356,7 @@ def builddata(orderitem, product_catalog, conn1):
 
 
 
-def buildcustomdata(order, product_catalog, conn1):
+def buildcustomdata(order, product_catalog,dollars, conn1):
     """
 
     :param order:
@@ -360,17 +372,13 @@ def buildcustomdata(order, product_catalog, conn1):
         custom_rec = cursor.fetchall()
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
-
-    print("Test !!!!!")
-    print(order)
-    dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
-    print(dollars)
-
     for custrec in custom_rec:
         with conn1.cursor() as cursor1:
 
             sql = """ SELECT purchase_type,item_type, order_id, item_id, customer_id,
-                        order_sku, voucher_serial, custom_serial, sku, created_at, (list_price)* -1 , pro_rata
+                        order_sku, voucher_serial, custom_serial, sku, created_at, (list_price)* -1 , pro_rata,
+                        price_incl_tax * -1, base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1,
+                        discount_amount * -1, base_discount_amount * -1, order_currency_code, base_currency_code
                         FROM public.royalty
                         WHERE order_id = %s AND item_type = 'custom'
                     """
@@ -544,7 +552,6 @@ def getinvoiceitemdetails(order_id, item_id):
         """
         cursor.execute(sql, (order_id, item_id,))
         dollarvalues = cursor.fetchall()
-        print(dollarvalues)
         return dollarvalues
 
 
