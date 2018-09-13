@@ -20,10 +20,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '**************'
+    hostname = '************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '**************'
+    psd = '************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -99,7 +99,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 1232752
+                    AND o.entity_id = 1192172
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -319,10 +319,10 @@ def builddata(orderitem, product_catalog, conn1):
             data['list_price'] = '{0:.2f}'.format(listprice)
             data['pro_rata'] = '{0:.3f}'.format((listprice / totallistprice)*100)
             prorata = float(listprice / totallistprice)
-            data['price_incl_tax'] = float(dollars[0]['price_incl_tax']) * prorata
-            data['base_price_incl_tax'] = float(dollars[0]['base_price_incl_tax']) * prorata
-            data['tax_amount'] = float(dollars[0]['tax_amount']) * prorata
-            data['base_tax_amount'] = float(dollars[0]['base_tax_amount']) * prorata
+            data['price_incl_tax'] = float(0 if dollars[0]['price_incl_tax'] is None else dollars[0]['price_incl_tax']) * prorata
+            data['base_price_incl_tax'] = float(0 if dollars[0]['base_price_incl_tax'] is None else dollars[0]['base_price_incl_tax']) * prorata
+            data['tax_amount'] = float(0 if dollars[0]['tax_amount'] is None else dollars[0]['tax_amount']) * prorata
+            data['base_tax_amount'] = float(0 if dollars[0]['base_tax_amount'] is None else dollars[0]['base_tax_amount']) * prorata
             data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount']) * prorata
             data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
             data['order_currency_code'] = dollars[0]['order_currency_code']
@@ -425,10 +425,10 @@ def buildcustomdata(order, product_catalog, conn1):
                 data['list_price'] = product_catalog.at[data['sku'], 'price']
                 data['pro_rata'] = '{0:.3f}'.format((data['list_price'] / totallistprice)*100)
                 prorata = float(data['list_price'] / totallistprice)
-                data['price_incl_tax'] = float(dollars[0]['price_incl_tax']) * prorata
-                data['base_price_incl_tax'] = float(dollars[0]['base_price_incl_tax']) * prorata
-                data['tax_amount'] = float(dollars[0]['tax_amount']) * prorata
-                data['base_tax_amount'] = float(dollars[0]['base_tax_amount']) * prorata
+                data['price_incl_tax'] = float(0 if dollars[0]['price_incl_tax'] is None else dollars[0]['price_incl_tax']) * prorata
+                data['base_price_incl_tax'] = float(0 if dollars[0]['base_price_incl_tax'] is None else dollars[0]['base_price_incl_tax']) * prorata
+                data['tax_amount'] = float(0 if dollars[0]['tax_amount'] is None else dollars[0]['tax_amount']) * prorata
+                data['base_tax_amount'] = float(0 if dollars[0]['base_tax_amount'] is None else dollars[0]['base_tax_amount']) * prorata
                 data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount']) * prorata
                 data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
                 data['order_currency_code'] = dollars[0]['order_currency_code']
