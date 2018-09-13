@@ -20,10 +20,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '*************'
+    hostname = '**************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '*************'
+    psd = '**************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -247,11 +247,11 @@ def customorderrecord(order, product_catalog, conn1):
     data['list_price'] = 1
 
     cur = conn1.cursor()
-    insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
+    insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s)"""
     cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                               0, data['customer_id'], data['order_sku'],
                               data['voucher_serial'], '',
-                              '', data['created_at'], data['list_price'], ''))
+                              '', data['created_at'], data['list_price']), )
     conn1.commit()
     print(data)
 
@@ -318,13 +318,27 @@ def builddata(orderitem, product_catalog, conn1):
 
             data['list_price'] = '{0:.2f}'.format(listprice)
             data['pro_rata'] = '{0:.3f}'.format((listprice / totallistprice)*100)
+            prorata = float(listprice / totallistprice)
+            data['price_incl_tax'] = float(dollars[0]['price_incl_tax']) * prorata
+            data['base_price_incl_tax'] = float(dollars[0]['base_price_incl_tax']) * prorata
+            data['tax_amount'] = float(dollars[0]['tax_amount']) * prorata
+            data['base_tax_amount'] = float(dollars[0]['base_tax_amount']) * prorata
+            data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount']) * prorata
+            data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
+            data['order_currency_code'] = dollars[0]['order_currency_code']
+            data['base_currency_code'] = dollars[0]['base_currency_code']
 
             ##Data Insertion
             cur = conn1.cursor()
-            insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
+            insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
+                                                                ,%s, %s,%s, %s, %s,%s, %s, %s)"""
             cur.execute(insert_quey, (data['purchase_type'], 'purchase', data['order_id'],
                                 data['item_id'], data['customer_id'], data['order_sku'], data['voucher_serial'],'',
-                                data['sku'], data['created_at'], data['list_price'], data['pro_rata']))
+                                data['sku'], data['created_at'], data['list_price'],
+                                data['pro_rata'], data['price_incl_tax'], data['base_price_incl_tax'],
+                                data['tax_amount'], data['base_tax_amount'],
+                                data['discount_amount'], data['base_discount_amount'],
+                                data['order_currency_code'],data['base_currency_code'], ))
             conn1.commit()
             print(data)
 
@@ -410,13 +424,28 @@ def buildcustomdata(order, product_catalog, conn1):
                 data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(custrec['redeem_date'])
                 data['list_price'] = product_catalog.at[data['sku'], 'price']
                 data['pro_rata'] = '{0:.3f}'.format((data['list_price'] / totallistprice)*100)
+                prorata = float(data['list_price'] / totallistprice)
+                data['price_incl_tax'] = float(dollars[0]['price_incl_tax']) * prorata
+                data['base_price_incl_tax'] = float(dollars[0]['base_price_incl_tax']) * prorata
+                data['tax_amount'] = float(dollars[0]['tax_amount']) * prorata
+                data['base_tax_amount'] = float(dollars[0]['base_tax_amount']) * prorata
+                data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount']) * prorata
+                data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
+                data['order_currency_code'] = dollars[0]['order_currency_code']
+                data['base_currency_code'] = dollars[0]['base_currency_code']
+
 
                 cur = conn1.cursor()
-                insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
+                insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s ,
+                                                                    %s, %s,%s, %s, %s,%s, %s, %s)"""
                 cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                                           data['item_id'], data['customer_id'], data['order_sku'],
                                           data['voucher_serial'], data['custom_serial'],
-                                          data['sku'], data['created_at'], data['list_price'], data['pro_rata']))
+                                          data['sku'], data['created_at'], data['list_price'],
+                                          data['pro_rata'], data['price_incl_tax'], data['base_price_incl_tax'],
+                                          data['tax_amount'], data['base_tax_amount'],
+                                          data['discount_amount'], data['base_discount_amount'],
+                                          data['order_currency_code'],data['base_currency_code'], ))
                 conn1.commit()
                 print(data)
 
@@ -515,6 +544,7 @@ def getinvoiceitemdetails(order_id, item_id):
         """
         cursor.execute(sql, (order_id, item_id,))
         dollarvalues = cursor.fetchall()
+        print(dollarvalues)
         return dollarvalues
 
 
