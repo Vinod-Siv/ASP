@@ -36,8 +36,8 @@ def dbconnection():
         dbname= 'uaudio',
         host='*************',
         port= '5439',
-        user= '*************',
-        password= 'uWb6~ha-{mbi')
+        user= 'uadbadmin',
+        password= '*************')
 
     return conn, conn1
 
@@ -97,8 +97,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    AND o.entity_id = 1191915
+                    AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
+                    # AND o.entity_id = 1191915
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -253,14 +253,22 @@ def customorderrecord(order, dollars,  conn1):
     data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount'])
     data['order_currency_code'] = dollars[0]['order_currency_code']
 
+    # data['net_price'] = data['price_incl_tax'] - data['tax_amount']
+    # data['base_net_price'] =
+
 
     cur = conn1.cursor()
-    insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
-                                                        ,%s, %s,%s, %s, %s,%s, %s)"""
+    insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, order_id,
+                                                        customer_id, order_sku, voucher_serial, created_at, 
+                                                         price_incl_tax, base_price_incl_tax,
+                                                         tax_amount, base_tax_amount, discount_amount,
+                                                         base_discount_amount, order_currency_code  ) 
+                                      values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
+                                                        ,%s, %s)"""
     cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
-                              0, data['customer_id'], data['order_sku'],
-                              data['voucher_serial'], '', '', data['created_at'], 0,
-                              0, data['price_incl_tax'], data['base_price_incl_tax'],
+                              data['customer_id'], data['order_sku'],
+                              data['voucher_serial'], data['created_at'],
+                              data['price_incl_tax'], data['base_price_incl_tax'],
                               data['tax_amount'], data['base_tax_amount'],
                               data['discount_amount'], data['base_discount_amount'],
                               data['order_currency_code'], ))
@@ -336,10 +344,15 @@ def builddata(orderitem, product_catalog,dollars, conn1):
 
             ##Data Insertion
             cur = conn1.cursor()
-            insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
-                                                                ,%s, %s,%s, %s, %s,%s, %s)"""
+            insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, order_id, item_id,
+                                                        customer_id, order_sku, voucher_serial, sku, created_at, 
+                                                        list_price, pro_rata, price_incl_tax, base_price_incl_tax,
+                                                         tax_amount, base_tax_amount, discount_amount,
+                                                         base_discount_amount, order_currency_code  ) 
+                                              values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
+                                                                ,%s, %s,%s, %s, %s,%s)"""
             cur.execute(insert_quey, (data['purchase_type'], 'purchase', data['order_id'],
-                                data['item_id'], data['customer_id'], data['order_sku'], data['voucher_serial'],'',
+                                data['item_id'], data['customer_id'], data['order_sku'], data['voucher_serial'],
                                 data['sku'], data['created_at'], data['list_price'],
                                 data['pro_rata'], data['price_incl_tax'], data['base_price_incl_tax'],
                                 data['tax_amount'], data['base_tax_amount'],
@@ -578,7 +591,7 @@ def getpromoorders(product_catalog):
                         data['item_type'] = 'promo-custom'
                         data['custom_id'] = cust['custom_id']
                         data['customer_id'] = order['customers_id']
-                        data['order_sku'] = order['skus_id']
+                        data['order_sku'] = order['vouchers_admin_reason'].strip()
                         data['voucher_serial'] = order['vouchers_serial']
                         data['custom_serial'] = cust['vouchers_serial']
                         data['sku'] = cust['sku'].replace('UAD-2', 'UAD')
@@ -601,7 +614,7 @@ def getpromoorders(product_catalog):
                 data['purchase_type'] = 'store'
                 data['item_type'] = 'promo'
                 data['customer_id'] = order['customers_id']
-                data['order_sku'] = order['vouchers_admin_reason']
+                data['order_sku'] = order['vouchers_admin_reason'].strip()
                 data['voucher_serial'] = order['vouchers_serial']
                 data['sku'] = order['skus_id'].replace('UAD-2', 'UAD')
                 data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(order['vouchers_created'])
