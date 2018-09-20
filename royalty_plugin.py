@@ -20,10 +20,10 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '*************'
+    hostname = '*****************'
     #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
     username = 'redshift'
-    psd = '*************'
+    psd = '*****************'
 
     conn = pymysql.connect(
         host=hostname,
@@ -34,10 +34,10 @@ def dbconnection():
 
     conn1 = psycopg2.connect(
         dbname= 'uaudio',
-        host='*************',
+        host='*****************',
         port= '5439',
         user= 'uadbadmin',
-        password= '*************')
+        password= '*****************')
 
     return conn, conn1
 
@@ -97,8 +97,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-30' 
-                    # AND o.entity_id = 1191915
+                    # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-31' 
+                    AND o.entity_id = 1217269
                     AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -106,26 +106,21 @@ def getorders():
         return result
 
 
-def processorders(vouchers, conn1):
-    SkuMap = buildskumap()
-    print('SKUMAP:')
-    print(SkuMap)
-
-    product_catalog= catalogproducts()
+def processorders(vouchers, conn1, SkuMap, product_catalog):
 
     for order in vouchers:
         dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
 
         if order['voucher_type'] == 'purchase':
             iscustom = customrorders(order['entity_id'])
-            if (iscustom and order['sku'][:10] == 'UAD-CUSTOM'):
+            if iscustom and order['sku'][:10] == 'UAD-CUSTOM':
                 customorderrecord(order, dollars, conn1)
-                buildcustomdata(order, product_catalog,dollars, conn1)
+                buildcustomdata(order, product_catalog, dollars, conn1)
 
             else:
                 vouc = getproductcodes(order['vouchers_serial'], order['voucher_type'], order['entity_id'], order['sku'], order['item_id'], order['customer_id'], order['created_at'])
                 orderitem = getskusforprodcodes(vouc, SkuMap)
-                builddata(orderitem, product_catalog,dollars, conn1)
+                builddata(orderitem, product_catalog, dollars, conn1)
         else:
             print("Not Store")
             print(order)
@@ -142,13 +137,19 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
     :param createdat:
     :return:
     '''
-    with conn.cursor() as cursor:
+    if voucher_type == 'registration' or voucher_type == 'NAMMB2B':
+        sql = """SELECT vp.products_code
+                            FROM uaudio.vouchers_products vp 
+                            WHERE vp.vouchers_serial = %s"""
+    else:
         sql = """SELECT vp.products_code
                     FROM uaudio.vouchers_products vp 
-                    LEFT OUTER JOIN uaudio.customers_products_sw cps 
-                    ON(vp.vouchers_serial = cps.vouchers_serial 
-                    AND vp.products_code = cps.products_code) 
-                    WHERE vp.vouchers_serial = %s"""
+                LEFT OUTER JOIN uaudio.customers_products_sw cps 
+                ON(vp.vouchers_serial = cps.vouchers_serial 
+                AND vp.products_code = cps.products_code) 
+                WHERE vp.vouchers_serial = %s"""
+
+    with conn.cursor() as cursor:
         cursor.execute(sql, (vouchers, ))
         result = cursor.fetchall()
         products = []
@@ -561,80 +562,94 @@ def getinvoiceitemdetails(order_id, item_id):
         return dollarvalues
 
 
-def getpromoorders(product_catalog):
+def getpromoorders(product_catalog, skumap):
     with conn.cursor() as cursor:
         sql = """select * from uaudio.vouchers v 
                  join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
-                #   join uaudio.uad_custom_redeem cr on c.id = cr.custom_id
-                where voucher_type = 'promo'
-                AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-08-30'
-                order by v.vouchers_serial      
+                 where v.voucher_type != 'purchase' AND
+                    vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-31'
+                 order by v.vouchers_serial      
         """
         cursor.execute(sql)
         promoorders = cursor.fetchall()
 
         for order in promoorders:
-            if order['products_code'] == 'UAD-CUSTOM-N':
-                with conn.cursor() as cursor:
-                    sql = """select cr.* from uaudio.vouchers v
-                             join uaudio.uad_custom c on v.vouchers_serial = c.vouchers_serial
-                             join uaudio.uad_custom_redeem cr on c.id = cr.custom_id
-                             where v.vouchers_serial = %s AND qty = 1
-                             ORDER BY cr.date DESC 
-                            """
-                    cursor.execute(sql, (order['vouchers_serial'],))
-                    customorder = cursor.fetchall()
+            if order['voucher_type'] == 'promo':
+                if order['products_code'] == 'UAD-CUSTOM-N':
+                    with conn.cursor() as cursor:
+                        sql = """select cr.* from uaudio.vouchers v
+                                 join uaudio.uad_custom c on v.vouchers_serial = c.vouchers_serial
+                                 join uaudio.uad_custom_redeem cr on c.id = cr.custom_id
+                                 where v.vouchers_serial = %s AND qty = 1
+                                 ORDER BY cr.date DESC 
+                                """
+                        cursor.execute(sql, (order['vouchers_serial'],))
+                        customorder = cursor.fetchall()
 
-                    for cust in customorder:
-                        data = dict()
-                        data['purchase_type'] = 'store'
-                        data['item_type'] = 'promo-custom'
-                        data['custom_id'] = cust['custom_id']
-                        data['customer_id'] = order['customers_id']
-                        data['order_sku'] = order['vouchers_admin_reason'].strip()
-                        data['voucher_serial'] = order['vouchers_serial']
-                        data['custom_serial'] = cust['vouchers_serial']
-                        data['sku'] = cust['sku'].replace('UAD-2', 'UAD')
-                        data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(cust['date'])
-                        data['list_price'] = product_catalog.at[data['sku'], 'price']
+                        for cust in customorder:
+                            data = dict()
+                            data['purchase_type'] = 'store'
+                            data['item_type'] = 'promo-custom'
+                            data['custom_id'] = cust['custom_id']
+                            data['customer_id'] = order['customers_id']
+                            data['order_sku'] = order['vouchers_admin_reason'].strip()
+                            data['voucher_serial'] = order['vouchers_serial']
+                            data['custom_serial'] = cust['vouchers_serial']
+                            data['sku'] = cust['sku'].replace('UAD-2', 'UAD')
+                            data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(cust['date'])
+                            data['list_price'] = product_catalog.at[data['sku'], 'price']
 
-                        cur = conn1.cursor()
-                        insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, customer_id, order_sku, 
-                                                            voucher_serial, custom_serial, sku, created_at, list_price) 
-                                                values (%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
+                            cur = conn1.cursor()
+                            insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, customer_id, order_sku, 
+                                                                voucher_serial, custom_serial, sku, created_at, list_price) 
+                                                    values (%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
 
-                        cur.execute(insert_quey, (data['purchase_type'], data['item_type'],
-                                                  data['customer_id'], data['order_sku'],
-                                                  data['voucher_serial'], data['custom_serial'],
-                                                  data['sku'], data['created_at'], data['list_price'],))
-                        conn1.commit()
-                        print(data)
+                            cur.execute(insert_quey, (data['purchase_type'], data['item_type'],
+                                                      data['customer_id'], data['order_sku'],
+                                                      data['voucher_serial'], data['custom_serial'],
+                                                      data['sku'], data['created_at'], data['list_price'],))
+                            conn1.commit()
+                            print(data)
+                else:
+                    data = dict()
+                    data['purchase_type'] = 'store'
+                    data['item_type'] = 'promo'
+                    data['customer_id'] = order['customers_id']
+                    data['order_sku'] = order['vouchers_admin_reason'].strip()
+                    data['voucher_serial'] = order['vouchers_serial']
+                    data['sku'] = order['skus_id'].replace('UAD-2', 'UAD')
+                    data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(order['vouchers_created'])
+                    listprice = product_catalog.at[data['sku'], 'price']
+                    data['list_price'] = '{0:.2f}'.format(listprice)
+
+                    cur = conn1.cursor()
+                    insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, customer_id, order_sku, 
+                                                                                voucher_serial, sku, created_at, list_price) 
+                                                                    values (%s, %s, %s,%s, %s, %s, %s, %s)"""
+                    cur.execute(insert_quey, (data['purchase_type'], data['item_type'],
+                                              data['customer_id'], data['order_sku'],
+                                              data['voucher_serial'], data['sku'], data['created_at'], data['list_price'],))
+                    conn1.commit()
+                    # print(data)
+            elif order['voucher_type'] == 'registration' or order['voucher_type'] == 'nammb2b':
+                voucher = getproductcodes(order['vouchers_serial'], order['voucher_type'],
+                                       order['vouchers_purchase_ordernum'],
+                                       order['skus_id'], None, order['customers_id'], order['vouchers_created'])
+
+                print(getskusforprodcodes(voucher, skumap))
+                if order['voucher_type'] == 'registration':
+                    print("reg")
+                elif order['voucher_type'] == 'nammb2b':
+                    print("NAMM")
             else:
-                data = dict()
-                data['purchase_type'] = 'store'
-                data['item_type'] = 'promo'
-                data['customer_id'] = order['customers_id']
-                data['order_sku'] = order['vouchers_admin_reason'].strip()
-                data['voucher_serial'] = order['vouchers_serial']
-                data['sku'] = order['skus_id'].replace('UAD-2', 'UAD')
-                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(order['vouchers_created'])
-                listprice = product_catalog.at[data['sku'], 'price']
-                data['list_price'] = '{0:.2f}'.format(listprice)
+                print("Voucher type not handled", order['voucher_type'])
+                print(order)
 
-                cur = conn1.cursor()
-                insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, customer_id, order_sku, 
-                                                                            voucher_serial, sku, created_at, list_price) 
-                                                                values (%s, %s, %s,%s, %s, %s, %s, %s)"""
-                cur.execute(insert_quey, (data['purchase_type'], data['item_type'],
-                                          data['customer_id'], data['order_sku'],
-                                          data['voucher_serial'], data['sku'], data['created_at'], data['list_price'],))
-                conn1.commit()
-                print(data)
-
-        return promoorders
 
 if __name__ == '__main__':
     conn, conn1 = dbconnection()
+    SkuMap = buildskumap()
+    product_catalog = catalogproducts()
     vouchers = getorders()
-    processorders(vouchers, conn1)
-    getpromoorders(catalogproducts())
+    processorders(vouchers, conn1, SkuMap, product_catalog)
+    # getpromoorders(product_catalog, SkuMap)
