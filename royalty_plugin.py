@@ -561,7 +561,8 @@ def getinvoiceitemdetails(order_id, item_id):
                     from uaudio.sales_flat_order o
                     join uaudio.sales_flat_order_item ot on o.entity_id = ot.order_id
                     join uaudio.sales_flat_invoice i on o.entity_id = i.order_id
-                    left outer join uaudio.sales_flat_invoice_item it on (i.entity_id = it.parent_id and ot.item_id = it.order_item_id)
+                    left outer join uaudio.sales_flat_invoice_item it 
+                        on (i.entity_id = it.parent_id and ot.item_id = it.order_item_id)
                     where o.entity_id = %s AND it.order_item_id = %s        
         """
         cursor.execute(sql, (order_id, item_id,))
@@ -608,7 +609,8 @@ def getpromoorders(product_catalog, skumap):
 
                             cur = conn1.cursor()
                             insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, customer_id, order_sku, 
-                                                                voucher_serial, custom_serial, sku, created_at, list_price) 
+                                                                voucher_serial, custom_serial, sku, 
+                                                                created_at, list_price) 
                                                     values (%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
 
                             cur.execute(insert_quey, (data['purchase_type'], data['item_type'],
@@ -631,11 +633,12 @@ def getpromoorders(product_catalog, skumap):
 
                     cur = conn1.cursor()
                     insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, customer_id, order_sku, 
-                                                                                voucher_serial, sku, created_at, list_price) 
+                                                                    voucher_serial, sku, created_at, list_price) 
                                                                     values (%s, %s, %s,%s, %s, %s, %s, %s)"""
                     cur.execute(insert_quey, (data['purchase_type'], data['item_type'],
                                               data['customer_id'], data['order_sku'],
-                                              data['voucher_serial'], data['sku'], data['created_at'], data['list_price'],))
+                                              data['voucher_serial'], data['sku'],
+                                              data['created_at'], data['list_price'],))
                     conn1.commit()
                     # print(data)
             elif order['voucher_type'] == 'registration' or order['voucher_type'] == 'nammb2b':
