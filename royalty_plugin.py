@@ -39,7 +39,14 @@ def dbconnection():
         user= 'uadbadmin',
         password= '*****************')
 
-    return conn, conn1
+    conn2 = psycopg2.connect(
+        dbname= 'uaudio',
+        host='*****************',
+        port= '5439',
+        user= 'admin',
+        password= '*****************')
+
+    return conn, conn1, conn2
 
 def buildskumap():
     ''' SKUMAP block
@@ -97,7 +104,7 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    # AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-31' 
+                    # AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-31' 
                     AND o.entity_id = 1217269
                     AND o.state = 'complete' AND status = 'complete'
                     """
@@ -565,9 +572,9 @@ def getinvoiceitemdetails(order_id, item_id):
 def getpromoorders(product_catalog, skumap):
     with conn.cursor() as cursor:
         sql = """select * from uaudio.vouchers v 
-                 join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
+                 # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  where v.voucher_type != 'purchase' AND
-                    vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-31'
+                    vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-31'
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -639,17 +646,35 @@ def getpromoorders(product_catalog, skumap):
                 print(getskusforprodcodes(voucher, skumap))
                 if order['voucher_type'] == 'registration':
                     print("reg")
+                    print(order)
+                    with conn.cursor() as cursor:
+                        sql = """select customers_products_hw_serial from uaudio.customers_products_hw
+                        where vouchers_serial = %s
+                        """
+                        cursor.execute(sql, (order['vouchers_serial'],))
+                        serialhist = cursor.fetchone()
+
+                    if serialhist is not None:
+                        with conn2.cursor() as cursor:
+                            sql = """select ordernum, orderline from rpt.serialnumberhistory sn
+                                     where sn.serialnumber = %s
+                                     AND sn.shipped = 1
+                                    """
+                            cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
+                            customorder = cursor.fetchone()
+                            print(customorder)
                 elif order['voucher_type'] == 'nammb2b':
                     print("NAMM")
             else:
                 print("Voucher type not handled", order['voucher_type'])
-                print(order)
+                # print(order)
 
 
 if __name__ == '__main__':
-    conn, conn1 = dbconnection()
+    conn, conn1, conn2 = dbconnection()
     SkuMap = buildskumap()
     product_catalog = catalogproducts()
     vouchers = getorders()
     processorders(vouchers, conn1, SkuMap, product_catalog)
-    # getpromoorders(product_catalog, SkuMap)
+    getpromoorders(product_catalog, SkuMap)
+
