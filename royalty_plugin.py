@@ -561,8 +561,7 @@ def getinvoiceitemdetails(order_id, item_id):
                     from uaudio.sales_flat_order o
                     join uaudio.sales_flat_order_item ot on o.entity_id = ot.order_id
                     join uaudio.sales_flat_invoice i on o.entity_id = i.order_id
-                    left outer join uaudio.sales_flat_invoice_item it 
-                        on (i.entity_id = it.parent_id and ot.item_id = it.order_item_id)
+                    left outer join uaudio.sales_flat_invoice_item it on (i.entity_id = it.parent_id and ot.item_id = it.order_item_id)
                     where o.entity_id = %s AND it.order_item_id = %s        
         """
         cursor.execute(sql, (order_id, item_id,))
@@ -582,8 +581,9 @@ def getpromoorders(product_catalog, skumap):
         promoorders = cursor.fetchall()
 
         for order in promoorders:
+            print(order)
             if order['voucher_type'] == 'promo':
-                if order['products_code'] == 'UAD-CUSTOM-N':
+                if order['skus_id'] == 'UAD-CUSTOM-N':
                     with conn.cursor() as cursor:
                         sql = """select cr.* from uaudio.vouchers v
                                  join uaudio.uad_custom c on v.vouchers_serial = c.vouchers_serial
@@ -609,8 +609,7 @@ def getpromoorders(product_catalog, skumap):
 
                             cur = conn1.cursor()
                             insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, customer_id, order_sku, 
-                                                                voucher_serial, custom_serial, sku, 
-                                                                created_at, list_price) 
+                                                                voucher_serial, custom_serial, sku, created_at, list_price) 
                                                     values (%s, %s, %s,%s, %s, %s,%s, %s, %s)"""
 
                             cur.execute(insert_quey, (data['purchase_type'], data['item_type'],
@@ -633,12 +632,11 @@ def getpromoorders(product_catalog, skumap):
 
                     cur = conn1.cursor()
                     insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, customer_id, order_sku, 
-                                                                    voucher_serial, sku, created_at, list_price) 
+                                                                                voucher_serial, sku, created_at, list_price) 
                                                                     values (%s, %s, %s,%s, %s, %s, %s, %s)"""
                     cur.execute(insert_quey, (data['purchase_type'], data['item_type'],
                                               data['customer_id'], data['order_sku'],
-                                              data['voucher_serial'], data['sku'],
-                                              data['created_at'], data['list_price'],))
+                                              data['voucher_serial'], data['sku'], data['created_at'], data['list_price'],))
                     conn1.commit()
                     # print(data)
             elif order['voucher_type'] == 'registration' or order['voucher_type'] == 'nammb2b':
@@ -659,13 +657,18 @@ def getpromoorders(product_catalog, skumap):
 
                     if serialhist is not None:
                         with conn2.cursor() as cursor:
-                            sql = """select ordernum, orderline from rpt.serialnumberhistory sn
-                                     where sn.serialnumber = %s
-                                     AND sn.shipped = 1
+                            sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, usdtaxamt, localtaxamt
+                                        from rpt.salesmargindetail sm join rpt.serialnumberhistory sn
+                                        ON sn.ordernum = sm.ordernum AND sn.orderline = sm.orderline
+                                      where sn.serialnumber = %s
+                                      AND sm.shipstatus = 'Shipped' AND sn.shipped = 1
                                     """
                             cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
                             customorder = cursor.fetchone()
-                            print(customorder)
+                            if customorder:
+                                print(customorder)
+                            else:
+                                print("Epicor Order not found for", order['vouchers_serial'])
                 elif order['voucher_type'] == 'nammb2b':
                     print("NAMM")
             else:
@@ -680,4 +683,3 @@ if __name__ == '__main__':
     vouchers = getorders()
     processorders(vouchers, conn1, SkuMap, product_catalog)
     getpromoorders(product_catalog, SkuMap)
-
