@@ -5,7 +5,6 @@ import boto3
 import psycopg2
 import json
 
-
 def dbconnection():
 
     '''Database connection block
@@ -21,7 +20,6 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    
 
     return conn, conn1, conn2
 
@@ -105,12 +103,10 @@ def customswap():
                    join uaudio.uad_custom c ON c.id = ch.custom_id """ + cond
         cursor.execute(sql)
         result = cursor.fetchall()
-        results = tuple([(x['id'], x['number_plugins']) for x in result if x['id'] is not None])
 
         for customorder in result:
-            print(customorder)
             with conn1.cursor() as cursor:
-
+                print(customorder)
                 sql= """ UPDATE public.royalty SET custom_history_id = %s WHERE custom_id = %s 
                             AND item_type = 'custom-redeem' AND custom_history_id is null
                         """
@@ -121,11 +117,10 @@ def customswap():
                         discount_amount * -1, base_discount_amount * -1, order_currency_code, custom_history_id, 
                         custom_id
                          from public.royalty WHERE custom_id = %s AND item_type = 'custom-redeem'
-                         ORDER BY created_at desc limit %s"""
+                         AND custom_history_id = %s """
 
                 cursor.execute(sql, (customorder['id'], customorder['custom_id']))
-                conn1.commit()
-                cursor.execute(sql1, (customorder['custom_history_date'], customorder['custom_id'], customorder['number_plugins'],))
+                r = cursor.execute(sql1, (customorder['custom_history_date'], customorder['custom_id'], customorder['id'], ))
                 conn1.commit()
 
                 # insertcustomdata(customorder)
