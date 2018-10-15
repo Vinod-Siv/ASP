@@ -21,31 +21,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    hostname = '*****************'
-    #  has to be removed once the S3 credentials bucket is setup and test to access the credentials directly from S3
-    username = 'redshift'
-    psd = '*****************'
-
-    conn = pymysql.connect(
-        host=hostname,
-        user=username,
-        password=psd,
-        cursorclass=pymysql.cursors.DictCursor
-    )
-
-    conn1 = psycopg2.connect(
-        dbname= 'uaudio',
-        host='*****************',
-        port= '5439',
-        user= 'uadbadmin',
-        password= '*****************')
-
-    conn2 = psycopg2.connect(
-        dbname= 'uaudio',
-        host='*****************',
-        port= '5439',
-        user= 'admin',
-        password= '*****************')
+    
 
     return conn, conn1, conn2
 
@@ -116,33 +92,43 @@ def processcredits():
 
 
 def customswap():
+
+    with conn1.cursor() as cursor:
+        sql= """select distinct custom_history_id from public.royalty where custom_history_id is not null ;"""
+        cursor.execute(sql)
+        history_id = cursor.fetchall()
+        history_ids = tuple([x[0] if x[0] is not None else 0 for x in history_id])
+
     with conn.cursor() as cursor:
-        sql = """select DISTINCT custom_id as id, number_plugins, c.vouchers_serial, o.entity_id, i.item_id, 
-                    o.customer_id, i.sku  from uaudio.uad_custom_history ch
-                    JOIN uaudio.uad_custom c ON c.id = ch.custom_id
-                    JOIN uaudio.sales_flat_order o ON c.orders_id = o.entity_id
-                    JOIN uaudio.sales_flat_order_item i ON o.entity_id = i.order_id
-              where DATE(custom_history_date) = subdate(DATE(NOW()), INTERVAL 1 DAY);"""
+        cond = "where ch.id NOT IN " + str(history_ids) if len(history_id) != 0 else ''
+        sql = """select distinct ch.id, c.id as custom_id, ch.custom_history_date, number_plugins from uaudio.uad_custom_history ch
+                   join uaudio.uad_custom c ON c.id = ch.custom_id """ + cond
         cursor.execute(sql)
         result = cursor.fetchall()
-        print(result)
+        results = tuple([(x['id'], x['number_plugins']) for x in result if x['id'] is not None])
 
         for customorder in result:
+            print(customorder)
             with conn1.cursor() as cursor:
-                sql = """INSERT INTO public.royalty select purchase_type,item_type, order_id, item_id, customer_id,
-                        order_sku, voucher_serial, custom_serial, sku, created_at, (list_price)* -1 , pro_rata,
+
+                sql= """ UPDATE public.royalty SET custom_history_id = %s WHERE custom_id = %s 
+                            AND item_type = 'custom-redeem' AND custom_history_id is null
+                        """
+                #
+                sql1 = """INSERT INTO public.royalty select purchase_type, item_type, order_id, item_id, customer_id,
+                        order_sku, voucher_serial, custom_serial, sku, %s, (list_price)* -1 , pro_rata,
                         price_incl_tax * -1, base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1,
                         discount_amount * -1, base_discount_amount * -1, order_currency_code, custom_history_id, 
                         custom_id
                          from public.royalty WHERE custom_id = %s AND item_type = 'custom-redeem'
-                         ORDER BY created_at desc limit %s   """
-                cursor.execute(sql, (customorder['custom_id'], customorder['number_plugins'],))
+                         ORDER BY created_at desc limit %s"""
+
+                cursor.execute(sql, (customorder['id'], customorder['custom_id']))
                 conn1.commit()
-                customorder['id'] = customorder.pop('custom_id')
-                print(customorder)
+                cursor.execute(sql1, (customorder['custom_history_date'], customorder['custom_id'], customorder['number_plugins'],))
+                conn1.commit()
 
-
-                insertcustomdata(customorder)
+                # insertcustomdata(customorder)
 
 def getorders():
     ''' Fetch Orders Block
@@ -852,9 +838,9 @@ if __name__ == '__main__':
     conn, conn1, conn2 = dbconnection()
     SkuMap = buildskumap()
     product_catalog = catalogproducts()
-    processcredits()
-    # customswap()
+    # processcredits()
+    customswap()
     # vouchers = getorders()
     # processorders(vouchers, conn1, SkuMap, product_catalog)
-    getpromoorders(product_catalog, SkuMap)
+    # getpromoorders(product_catalog, SkuMap)
 
