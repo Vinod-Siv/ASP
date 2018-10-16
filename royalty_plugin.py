@@ -101,14 +101,17 @@ def customswap():
         history_ids = tuple([x[0] if x[0] is not None else 0 for x in history_id])
 
     with conn.cursor() as cursor:
-        cond = "where ch.id NOT IN " + str(history_ids) if len(history_id) != 0 else ''
+        cond = " AND ch.id NOT IN " + str(history_ids) if len(history_id) != 0 else ''
         sql = """select distinct ch.id, c.id as custom_id, ch.custom_history_date, number_plugins from uaudio.uad_custom_history ch
-                   join uaudio.uad_custom c ON c.id = ch.custom_id 
+                   join uaudio.uad_custom c ON c.id = ch.custom_id
+                   where ch.custom_history_date > '2018-06-01'
                    """ + cond
+        print(sql)
         cursor.execute(sql)
         result = cursor.fetchall()
 
         for customorder in result:
+            print(customorder)
             with conn1.cursor() as cursor:
                 sql= """ UPDATE public.royalty SET custom_history_id = %s WHERE custom_id = %s 
                             AND item_type = 'custom-redeem' AND custom_history_id is null
@@ -130,16 +133,21 @@ def customswap():
 
                 if affected_rows > 0:
                     with conn1.cursor() as cursor:
-                        sql2= """select order_id AS entity_id, item_id, custom_id, customer_id, sku, voucher_serial 
+                        sql2= """select order_id AS entity_id, item_id, custom_id, customer_id, order_sku as sku, voucher_serial 
                                 from public.royalty WHERE custom_id = %s 
-                                and item_type = 'custom' AND list_price > 0"""
+                                 AND list_price > 0"""
                         cursor.execute(sql2,(customorder['custom_id'],))
-                        order = cursor.fetchall()
+                        order = cursor.fetchone()
+                        orders={'entity_id': order[0], 'item_id': order[1], 'custom_id': order[2],
+                                'customer_id': order[3],'sku':order[4],'vouchers_serial':order[5]}
+                        print(orders)
                         custrec={}
                         custrec['id'] = customorder['custom_id']
                         custrec['number_plugins'] = customorder['number_plugins']
-                        dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
-                        insertcustomdata(order, dollars ,custrec)
+                        dollars = getinvoiceitemdetails(order[0], order[1])
+                        print(order, custrec, dollars)
+                        insertcustomdata(orders, dollars ,custrec)
+
 
 def getorders():
     ''' Fetch Orders Block
@@ -601,7 +609,7 @@ def insertcustomdata(order, dollars, custrec):
                 # else:
                 #     data['status'] = 'issued'
                 data['sku'] = orderitem['sku'].replace('UAD-2', 'UAD')
-                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(custrec['redeem_date'])
+                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(orderitem['date'])
                 data['list_price'] = product_catalog.at[data['sku'], 'price']
                 data['pro_rata'] = '{0:.3f}'.format((data['list_price'] / totallistprice)*100)
                 prorata = float(data['list_price'] / totallistprice)
