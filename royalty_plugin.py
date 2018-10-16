@@ -21,8 +21,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-
-
+    
     return conn, conn1, conn2
 
 def buildskumap():
@@ -72,23 +71,25 @@ def processcredits():
         result = cursor.fetchall()
         orders = tuple([x[0] for x in result if x[0] is not None])
 
-    with conn.cursor() as cursor:
-        sql = "select distinct order_id,  created_at from uaudio.sales_flat_creditmemo where order_id in " + str(orders)
-        cursor.execute(sql)
-        orders = cursor.fetchall()
-        print(orders)
+    if len(orders)>0:
+        with conn.cursor() as cursor:
+            sql = "select distinct order_id,  created_at from uaudio.sales_flat_creditmemo where order_id in " + str(orders)
+            print(sql)
+            cursor.execute(sql)
+            orders = cursor.fetchall()
+            # print(orders)
 
-    for order in orders:
-        print(order)
-        with conn1.cursor() as cursor:
-            sql = """insert into public.royalty (select purchase_type, 'purchase-credit', order_id,item_id,
-                     customer_id, order_sku, voucher_serial, custom_serial, sku,%s, list_price, pro_rata, price_incl_tax * -1,
-                     base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1, discount_amount * -1, 
-                     base_discount_amount * -1, order_currency_code from public.royalty r
-                    where r.order_id = %s
-                    AND r.item_type != 'custom')"""
-            cursor.execute(sql, (order['created_at'], order['order_id'],))
-            conn1.commit()
+        for order in orders:
+            # print(order)
+            with conn1.cursor() as cursor:
+                sql = """insert into public.royalty (select purchase_type, 'purchase-credit', order_id,item_id,
+                         customer_id, order_sku, voucher_serial, custom_serial, sku,%s, list_price, pro_rata, price_incl_tax * -1,
+                         base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1, discount_amount * -1, 
+                         base_discount_amount * -1, order_currency_code from public.royalty r
+                        where r.order_id = %s
+                        AND r.item_type != 'custom')"""
+                cursor.execute(sql, (order['created_at'], order['order_id'],))
+                conn1.commit()
 
 
 def customswap():
@@ -187,8 +188,9 @@ def processorders(vouchers, conn1, SkuMap, product_catalog):
                 orderitem = getskusforprodcodes(vouc, SkuMap)
                 builddata(orderitem, product_catalog, dollars, conn1)
         else:
-            print("Not Store")
-            print(order)
+            pass
+            # print("Not Store")
+            # print(order)
 
 
 def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customerid, createdat, additional_data):
@@ -237,14 +239,14 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
         vouc['voucher_type'] = voucher_type
         vouc['created_at'] = createdat
         vouc['prodcodes'] = products
-        print(additional_data)
+        # print(additional_data)
         if additional_data is not None:
             vouc['discount_type'] = (json.loads(additional_data)).get("discount_type", 'None')
         else:
             vouc['discount_type'] = 'None'
 
         # vouc['discount_type'] = ((json.loads(additional_data)).get("discount_type", 'None')) if not None else 'None'
-        print(vouc['discount_type'])
+        # print(vouc['discount_type'])
     return vouc
 
 
@@ -347,7 +349,7 @@ def customorderrecord(order, dollars,  conn1):
                               data['discount_amount'], data['base_discount_amount'],
                               data['order_currency_code'], ))
     conn1.commit()
-    print(data)
+    # print(data)
 
 
 def builddata(orderitem, product_catalog,dollars, conn1):
@@ -360,7 +362,7 @@ def builddata(orderitem, product_catalog,dollars, conn1):
     '''
 
     ## Used for deciding on the list price
-    print(orderitem)
+    # print(orderitem)
     owned_productcodes = []
     owned_products = ownedproducts(orderitem)
     for prodcodes in owned_products:
@@ -451,8 +453,8 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                 listprice = product_catalog.at[skus, 'price']
             except KeyError:
                 listprice = 0
-            print(totallistprice)
-            print(listprice)
+            # print(totallistprice)
+            # print(listprice)
 
             if listprice != 0:
                 data = dict()
@@ -689,7 +691,7 @@ def listpricesum(orderitem, product_catalog, owned_productcodes):
     # for skus in orderitem['skuprods'].keys():
     #     listprice = product_catalog.at[skus, 'price']
     #     totallistprice += listprice
-    print("In total list price")
+    # print("In total list price")
     totallistprice = 0
     for skus, prod in orderitem['skuprods'].items():
         prod = [int(x) for x in prod]
@@ -749,7 +751,7 @@ def getpromoorders(product_catalog, skumap):
         promoorders = cursor.fetchall()
 
         for order in promoorders:
-            print(order)
+            # print(order)
             if order['voucher_type'] == 'promo':
                 if order['skus_id'] == 'UAD-CUSTOM-N':
                     with conn.cursor() as cursor:
@@ -812,10 +814,11 @@ def getpromoorders(product_catalog, skumap):
                                        order['vouchers_purchase_ordernum'],
                                        order['skus_id'], None, order['customers_id'], order['vouchers_created'], None)
 
-                print(getskusforprodcodes(voucher, skumap))
+                #### CHeck if fails
+                # print(getskusforprodcodes(voucher, skumap))
                 if order['voucher_type'] == 'registration':
-                    print("reg")
-                    print(order)
+                    # print("reg")
+                    # print(order)
                     with conn.cursor() as cursor:
                         sql = """select customers_products_hw_serial from uaudio.customers_products_hw
                         where vouchers_serial = %s
