@@ -4,6 +4,7 @@ import pandas as pd
 import boto3
 import psycopg2
 import json
+import datetime
 
 def dbconnection():
 
@@ -19,6 +20,7 @@ def dbconnection():
     # content = (obj['Body'].read())
     # env_var = content.decode('ascii')
     # print(env_var)
+
 
 
     return conn, conn1, conn2
@@ -100,13 +102,13 @@ def customswap():
     with conn.cursor() as cursor:
         cond = "where ch.id NOT IN " + str(history_ids) if len(history_id) != 0 else ''
         sql = """select distinct ch.id, c.id as custom_id, ch.custom_history_date, number_plugins from uaudio.uad_custom_history ch
-                   join uaudio.uad_custom c ON c.id = ch.custom_id """ + cond
+                   join uaudio.uad_custom c ON c.id = ch.custom_id 
+                   """ + cond
         cursor.execute(sql)
         result = cursor.fetchall()
 
         for customorder in result:
             with conn1.cursor() as cursor:
-                print(customorder)
                 sql= """ UPDATE public.royalty SET custom_history_id = %s WHERE custom_id = %s 
                             AND item_type = 'custom-redeem' AND custom_history_id is null
                         """
@@ -119,11 +121,24 @@ def customswap():
                          from public.royalty WHERE custom_id = %s AND item_type = 'custom-redeem'
                          AND custom_history_id = %s """
 
+
                 cursor.execute(sql, (customorder['id'], customorder['custom_id']))
-                r = cursor.execute(sql1, (customorder['custom_history_date'], customorder['custom_id'], customorder['id'], ))
+                cursor.execute(sql1, (customorder['custom_history_date'], customorder['custom_id'], customorder['id'], ))
+                affected_rows = cursor.rowcount
                 conn1.commit()
 
-                # insertcustomdata(customorder)
+                if affected_rows > 0:
+                    with conn1.cursor() as cursor:
+                        sql2= """select order_id AS entity_id, item_id, custom_id, customer_id, sku, voucher_serial 
+                                from public.royalty WHERE custom_id = %s 
+                                and item_type = 'custom' AND list_price > 0"""
+                        cursor.execute(sql2,(customorder['custom_id'],))
+                        order = cursor.fetchall()
+                        custrec={}
+                        custrec['id'] = customorder['custom_id']
+                        custrec['number_plugins'] = customorder['number_plugins']
+                        dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
+                        insertcustomdata(order, dollars ,custrec)
 
 def getorders():
     ''' Fetch Orders Block
@@ -145,7 +160,7 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-10-31' 
+                    AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-10' 
                     # AND o.entity_id = 1071009
                     # AND o.state = 'complete' AND status = 'complete'
                     """
@@ -727,7 +742,7 @@ def getpromoorders(product_catalog, skumap):
         sql = """select * from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  where v.voucher_type != 'purchase' AND
-                    vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-10-31' 
+                    vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-10' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -833,9 +848,9 @@ if __name__ == '__main__':
     conn, conn1, conn2 = dbconnection()
     SkuMap = buildskumap()
     product_catalog = catalogproducts()
-    # processcredits()
+    processcredits()
     customswap()
-    # vouchers = getorders()
-    # processorders(vouchers, conn1, SkuMap, product_catalog)
-    # getpromoorders(product_catalog, SkuMap)
+    vouchers = getorders()
+    processorders(vouchers, conn1, SkuMap, product_catalog)
+    getpromoorders(product_catalog, SkuMap)
 
