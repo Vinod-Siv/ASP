@@ -169,7 +169,7 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-10' 
+                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-02' 
                     # AND o.entity_id = 1071009
                     # AND o.state = 'complete' AND status = 'complete'
                     """
@@ -255,6 +255,7 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
 
         # vouc['discount_type'] = ((json.loads(additional_data)).get("discount_type", 'None')) if not None else 'None'
         # print(vouc['discount_type'])
+        print(vouc)
     return vouc
 
 
@@ -370,7 +371,9 @@ def builddata(orderitem, product_catalog,dollars, conn1):
     '''
 
     ## Used for deciding on the list price
-    # print(orderitem)
+    print("test")
+    print(orderitem)
+    print(dollars)
     owned_productcodes = []
     owned_products = ownedproducts(orderitem)
     for prodcodes in owned_products:
@@ -378,8 +381,23 @@ def builddata(orderitem, product_catalog,dollars, conn1):
 
     totallistprice = listpricesum(orderitem, product_catalog, owned_productcodes)
 
+    if isUltimate(orderitem['ordersku']):
+        item_type = 'ultimate'
+        if orderitem['discount_type'] == 'bundle_discount':
+            item_type = 'ultimate-upgrade'
+    elif isBundle(orderitem['ordersku']) == 1:
+        item_type = 'bundle'
+        if orderitem['discount_type'] == 'bundle_discount':
+            item_type = 'bundle_upgrade'
+    else:
+        item_type = 'standalone'
+
+
     for skus, prod in orderitem['skuprods'].items():
         prod=[int(x) for x in prod]
+
+
+
         if orderitem['discount_type'] == 'bundle_discount':
             if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
                 continue
@@ -392,7 +410,7 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                 if listprice != 0:
                     data = dict()
                     data['purchase_type'] = 'store'
-                    data['item_type'] = 'purchase'
+                    data['item_type'] = 'purchase_' + item_type
                     data['order_id'] = orderitem['orderid']
                     data['item_id'] = orderitem['item_id']
                     data['customer_id'] = orderitem['customer_id']
@@ -467,7 +485,7 @@ def builddata(orderitem, product_catalog,dollars, conn1):
             if listprice != 0:
                 data = dict()
                 data['purchase_type'] = 'store'
-                data['item_type'] = 'purchase'
+                data['item_type'] = 'purchase_' + item_type
                 data['order_id'] = orderitem['orderid']
                 data['item_id'] = orderitem['item_id']
                 data['customer_id'] = orderitem['customer_id']
@@ -746,13 +764,38 @@ def getinvoiceitemdetails(order_id, item_id):
         dollarvalues = cursor.fetchall()
         return dollarvalues
 
+def isUltimate(sku):
+    with conn.cursor() as cursor:
+        sql = """ select s.skus_product_type FROM (
+                select REPLACE(skus_id,  IF(
+                    skus_id LIKE 'UAD-2%%', 'UAD-2','UAD-1'), 'UAD') AS sku_id, skus_product_type
+                from uaudio.skus) s
+                where s.sku_id = %s
+              """
+        cursor.execute(sql, (sku, ))
+        res = cursor.fetchone()
+        print(res)
+        return 1 if res['skus_product_type'] == 'upgrade' else 0
 
-def getpromoorders(product_catalog, skumap):
+def isBundle(sku):
+    with conn.cursor() as cursor:
+        sql = """select s.skus_bundle FROM (
+                select REPLACE(skus_id,  IF(
+                    skus_id LIKE 'UAD-2%%', 'UAD-2','UAD-1'), 'UAD') AS sku_id, skus_bundle
+                from uaudio.skus) s 
+                where s.sku_id = %s"""
+        cursor.execute(sql, (sku, ))
+        res = cursor.fetchone()
+        print(res)
+        return res['skus_bundle']
+
+
+def getpromoorders(product_catalog, SkuMap):
     with conn.cursor() as cursor:
         sql = """select * from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  where v.voucher_type != 'purchase' AND
-                    vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-10' 
+                    vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-02' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -822,6 +865,9 @@ def getpromoorders(product_catalog, skumap):
                                        order['vouchers_purchase_ordernum'],
                                        order['skus_id'], None, order['customers_id'], order['vouchers_created'], None)
 
+                orderitem = getskusforprodcodes(voucher, SkuMap)
+                print(orderitem)
+
                 #### CHeck if fails
                 # print(getskusforprodcodes(voucher, skumap))
                 if order['voucher_type'] == 'registration':
@@ -859,9 +905,9 @@ if __name__ == '__main__':
     conn, conn1, conn2 = dbconnection()
     SkuMap = buildskumap()
     product_catalog = catalogproducts()
-    processcredits()
-    customswap()
+    # processcredits()
+    # customswap()
     vouchers = getorders()
     processorders(vouchers, conn1, SkuMap, product_catalog)
-    getpromoorders(product_catalog, SkuMap)
+    # getpromoorders(product_catalog, SkuMap)
 
