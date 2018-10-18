@@ -83,7 +83,8 @@ def processcredits():
             # print(order)
             with conn1.cursor() as cursor:
                 sql = """insert into public.royalty (select purchase_type, 'purchase-credit', order_id,item_id,
-                         customer_id, order_sku, voucher_serial, custom_serial, sku,%s, list_price, pro_rata, price_incl_tax * -1,
+                         customer_id, order_sku, voucher_serial, custom_serial, sku,%s, list_price, pro_rata, 
+                         net_price * -1, base_net_price * -1, price_incl_tax * -1,
                          base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1, discount_amount * -1, 
                          base_discount_amount * -1, order_currency_code from public.royalty r
                         where r.order_id = %s
@@ -119,6 +120,7 @@ def customswap():
                 #
                 sql1 = """INSERT INTO public.royalty select purchase_type, item_type, order_id, order_increment_id, item_id, customer_id,
                         order_sku, voucher_serial, custom_serial, sku, %s, (list_price)* -1 , pro_rata,
+                        net_price * -1, base_net_price * -1,
                         price_incl_tax * -1, base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1,
                         discount_amount * -1, base_discount_amount * -1, order_currency_code, custom_history_id, 
                         custom_id
@@ -170,7 +172,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-05' 
-                    AND o.entity_id = 1216833
+                    AND o.entity_id = 1227101
                     # AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -339,6 +341,8 @@ def customorderrecord(order, dollars,  conn1):
     data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount'])
     data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount'])
     data['order_currency_code'] = dollars[0]['order_currency_code']
+    data['net_price'] = data['price_incl_tax'] - data['tax_amount'] - data['discount_amount']
+    data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data['base_discount_amount']
 
     # data['net_price'] = data['price_incl_tax'] - data['tax_amount']
     # data['base_net_price'] =
@@ -346,15 +350,17 @@ def customorderrecord(order, dollars,  conn1):
 
     cur = conn1.cursor()
     insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, order_id, order_increment_id,
-                                                        customer_id, order_sku, voucher_serial, created_at, 
+                                                        customer_id, order_sku, voucher_serial, created_at,
+                                                         net_price, base_net_price, 
                                                          price_incl_tax, base_price_incl_tax,
                                                          tax_amount, base_tax_amount, discount_amount,
                                                          base_discount_amount, order_currency_code  ) 
                                       values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
-                                                        ,%s, %s, %s)"""
+                                                        ,%s, %s, %s, %s, %s)"""
     cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                               data['order_increment_id'], data['customer_id'], data['order_sku'],
                               data['voucher_serial'], data['created_at'],
+                              data['net_price'], data['base_net_price'],
                               data['price_incl_tax'], data['base_price_incl_tax'],
                               data['tax_amount'], data['base_tax_amount'],
                               data['discount_amount'], data['base_discount_amount'],
@@ -458,20 +464,26 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                         0 if dollars[0]['base_discount_amount'] is None else dollars[0][
                             'base_discount_amount']) * prorata
                     data['order_currency_code'] = dollars[0]['order_currency_code']
+                    data['net_price'] = data['price_incl_tax'] - data['tax_amount'] - data['discount_amount']
+                    data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data[
+                        'base_discount_amount']
+                    print(data['net_price'], data['base_net_price'])
 
                     cur = conn1.cursor()
                     insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, order_id, order_increment_id, item_id,
                                                                                 customer_id, order_sku, voucher_serial, sku, created_at, 
-                                                                                list_price, pro_rata, price_incl_tax, base_price_incl_tax,
+                                                                                list_price, pro_rata, net_price, base_net_price, 
+                                                                                 price_incl_tax, base_price_incl_tax,
                                                                                  tax_amount, base_tax_amount, discount_amount,
                                                                                  base_discount_amount, order_currency_code  ) 
                                                                       values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
-                                                                                        ,%s, %s,%s, %s, %s,%s, %s)"""
+                                                                                        ,%s, %s,%s, %s, %s,%s, %s, %s, %s)"""
                     cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                                               data['order_increment_id'], data['item_id'], data['customer_id'],
                                               data['order_sku'], data['voucher_serial'],
                                               data['sku'], data['created_at'], data['list_price'],
-                                              data['pro_rata'], data['price_incl_tax'], data['base_price_incl_tax'],
+                                              data['pro_rata'], data['net_price'], data['base_net_price'],
+                                              data['price_incl_tax'], data['base_price_incl_tax'],
                                               data['tax_amount'], data['base_tax_amount'],
                                               data['discount_amount'], data['base_discount_amount'],
                                               data['order_currency_code'],))
@@ -533,20 +545,25 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                 data['base_discount_amount'] = float(
                     0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
                 data['order_currency_code'] = dollars[0]['order_currency_code']
+                # Testing
+                data['net_price'] = data['price_incl_tax'] - data['tax_amount'] - data['discount_amount']
+                data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data['base_discount_amount']
+                print(data['net_price'], data['base_net_price'])
 
                 cur = conn1.cursor()
                 insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, order_id, order_increment_id, item_id,
                                                                 customer_id, order_sku, voucher_serial, sku, created_at, 
-                                                                list_price, pro_rata, price_incl_tax, base_price_incl_tax,
+                                                                list_price, pro_rata, net_price, base_net_price, 
+                                                                 price_incl_tax, base_price_incl_tax,
                                                                  tax_amount, base_tax_amount, discount_amount,
                                                                  base_discount_amount, order_currency_code  ) 
                                                       values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
-                                                                        ,%s, %s,%s, %s, %s,%s, %s)"""
+                                                                        ,%s, %s,%s, %s, %s,%s, %s, %s, %s)"""
                 cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'], data['order_increment_id'],
-                                          data['item_id'], data['customer_id'], data['order_sku'],
-                                          data['voucher_serial'],
+                                          data['item_id'], data['customer_id'], data['order_sku'], data['voucher_serial'],
                                           data['sku'], data['created_at'], data['list_price'],
-                                          data['pro_rata'], data['price_incl_tax'], data['base_price_incl_tax'],
+                                          data['pro_rata'], data['net_price'], data['base_net_price'],
+                                          data['price_incl_tax'], data['base_price_incl_tax'],
                                           data['tax_amount'], data['base_tax_amount'],
                                           data['discount_amount'], data['base_discount_amount'],
                                           data['order_currency_code'],))
@@ -575,6 +592,7 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
 
             sql = """ SELECT purchase_type,item_type, order_id, order_increment_id, item_id, customer_id,
                         order_sku, voucher_serial, custom_serial, sku, created_at, list_price , pro_rata,
+                        net_price * -1, base_net_price *-1,
                         price_incl_tax * -1, base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1,
                         discount_amount * -1, base_discount_amount * -1, order_currency_code
                         FROM public.royalty
@@ -644,17 +662,23 @@ def insertcustomdata(order, dollars, custrec):
                 data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
                 data['order_currency_code'] = dollars[0]['order_currency_code']
                 data['custom_history_id'] = orderitem['history_id']
+                data['net_price'] = data['price_incl_tax'] - data['tax_amount'] - data['discount_amount']
+                data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data[
+                    'base_discount_amount']
+                print(data['net_price'], data['base_net_price'])
 
 
                 cur = conn1.cursor()
                 insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s ,
-                                                                    %s, %s,%s, %s, %s,%s, %s, %s, %s, %s)"""
+                                                                    %s, %s,%s, %s, %s,%s, %s, %s, %s, %s, %s, %s)"""
                 cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                                           data['order_increment_id'],
                                           data['item_id'], data['customer_id'], data['order_sku'],
                                           data['voucher_serial'], data['custom_serial'],
                                           data['sku'], data['created_at'], data['list_price'],
-                                          data['pro_rata'], data['price_incl_tax'], data['base_price_incl_tax'],
+                                          data['pro_rata'],
+                                          data['net_price'], data['base_net_price'],
+                                          data['price_incl_tax'], data['base_price_incl_tax'],
                                           data['tax_amount'], data['base_tax_amount'],
                                           data['discount_amount'], data['base_discount_amount'],
                                           data['order_currency_code'], data['custom_history_id'], data['custom_id'], ))
