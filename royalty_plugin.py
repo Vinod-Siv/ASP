@@ -169,8 +169,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-05' 
-                    # AND o.entity_id = 1248034
+                    # AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-05' 
+                    AND o.entity_id = 1216833
                     # AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -823,7 +823,7 @@ def getpromoorders(product_catalog, SkuMap):
 
                         for cust in customorder:
                             data = dict()
-                            data['purchase_type'] = 'store'
+                            data['purchase_type'] = 'channel'
                             data['item_type'] = 'promo-custom'
                             data['custom_id'] = cust['custom_id']
                             data['customer_id'] = order['customers_id']
@@ -847,7 +847,7 @@ def getpromoorders(product_catalog, SkuMap):
                             print(data)
                 else:
                     data = dict()
-                    data['purchase_type'] = 'store'
+                    data['purchase_type'] = 'channel'
                     data['item_type'] = 'promo'
                     data['customer_id'] = order['customers_id']
                     data['order_sku'] = order['vouchers_admin_reason'].strip()
