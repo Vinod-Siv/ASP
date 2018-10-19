@@ -21,6 +21,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
+    
     return conn, conn1, conn2
 
 def buildskumap():
@@ -166,8 +167,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    # AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-05' 
-                    AND o.entity_id = 1217153
+                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-05' 
+                    # AND o.entity_id = 1217153
                     # AND o.state = 'complete' AND status = 'complete'
                     """
         cursor.execute(sql)
@@ -432,18 +433,21 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                     # List Price
                     # For every SKU, if the customer already owns the products (in owner sku) from catalog products.
                     # If yes, considers owner_discount as list price else choose price as list_price
-                    # ownersku = product_catalog.at[skus, 'owner_sku']
-                    # if ownersku:
-                    #     ownersku = list(ownersku.split(','))
+                    ownersku = product_catalog.at[skus, 'owner_sku']
+                    if ownersku:
+                        ownersku = list(ownersku.split(','))
 
                     # Owner discount on the list price
-                    # if ownersku:
-                    #     for prodcodes in ownersku:
-                    #         prodcode = int(prodcodes[2:])
-                    #         if prodcode in owned_productcodes:
-                    #             listprice = product_catalog.at[skus, 'owner_discount']
+                    data['owner_discount_price'] = None
+                    if ownersku:
+                        for prodcodes in ownersku:
+                            prodcode = int(prodcodes[2:])
+                            if prodcode in owned_productcodes:
+                                data['owner_discount_price'] = product_catalog.at[skus, 'owner_discount']
 
                     data['list_price'] = '{0:.2f}'.format(listprice)
+
+
                     data['pro_rata'] = '{0:.3f}'.format((listprice / totallistprice) * 100)
                     prorata = float(listprice / totallistprice)
                     data['price_incl_tax'] = float(
@@ -471,17 +475,18 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                     cur = conn1.cursor()
                     insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, order_id, order_increment_id, item_id,
                                                                                 customer_id, order_sku, voucher_serial, sku, created_at, 
-                                                                                list_price, pro_rata, net_price, base_net_price, 
+                                                                                list_price, owner_discount_price, pro_rata, net_price, base_net_price, 
                                                                                  price_incl_tax, base_price_incl_tax,
                                                                                  tax_amount, base_tax_amount, discount_amount,
                                                                                  base_discount_amount, voucher_amount, base_voucher_amount,
                                                                                  order_currency_code  ) 
                                                                       values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s, %s, %s
-                                                                                        ,%s, %s,%s, %s, %s,%s, %s, %s, %s)"""
+                                                                                        ,%s, %s,%s, %s, %s,%s, %s, %s, %s, %s)"""
                     cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                                               data['order_increment_id'], data['item_id'], data['customer_id'],
                                               data['order_sku'], data['voucher_serial'],
                                               data['sku'], data['created_at'], data['list_price'],
+                                              data['owner_discount_price'],
                                               data['pro_rata'], data['net_price'], data['base_net_price'],
                                               data['price_incl_tax'], data['base_price_incl_tax'],
                                               data['tax_amount'], data['base_tax_amount'],
@@ -592,7 +597,7 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
         with conn1.cursor() as cursor1:
 
             sql = """ SELECT purchase_type,item_type, order_id, order_increment_id, item_id, customer_id,
-                        order_sku, voucher_serial, custom_serial, sku, created_at, list_price , pro_rata,
+                        order_sku, voucher_serial, custom_serial, sku, created_at, list_price , owner_discount_price, pro_rata,
                         net_price * -1, base_net_price *-1,
                         price_incl_tax * -1, base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1,
                         discount_amount * -1, base_discount_amount * -1, voucher_amount *-1, base_voucher_amount *-1,
@@ -672,14 +677,14 @@ def insertcustomdata(order, dollars, custrec):
                     0 if dollars[0]['base_voucher_amount'] is None else dollars[0]['base_voucher_amount']) * prorata
 
                 cur = conn1.cursor()
-                insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s ,
+                insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s ,%s,
                                                                     %s, %s,%s, %s, %s,%s, %s, %s, %s, %s, %s, %s,%s, %s)"""
                 cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
                                           data['order_increment_id'],
                                           data['item_id'], data['customer_id'], data['order_sku'],
                                           data['voucher_serial'], data['custom_serial'],
                                           data['sku'], data['created_at'], data['list_price'],
-                                          data['pro_rata'],
+                                          None, data['pro_rata'],
                                           data['net_price'], data['base_net_price'],
                                           data['price_incl_tax'], data['base_price_incl_tax'],
                                           data['tax_amount'], data['base_tax_amount'],
