@@ -21,7 +21,8 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    
+
+
     return conn, conn1, conn2
 
 def buildskumap():
@@ -82,11 +83,12 @@ def processcredits():
         for order in orders:
             # print(order)
             with conn1.cursor() as cursor:
-                sql = """insert into public.royalty (select purchase_type, 'purchase-credit', order_id,item_id,
-                         customer_id, order_sku, voucher_serial, custom_serial, sku,%s, list_price, pro_rata, 
+                sql = """insert into public.royalty (select purchase_type, 'purchase-credit', order_id,order_increment_id, item_id,
+                         customer_id, order_sku, voucher_serial, custom_serial, sku,%s, list_price, owner_discount_price, pro_rata, 
                          net_price * -1, base_net_price * -1, price_incl_tax * -1,
                          base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1, discount_amount * -1, 
-                         base_discount_amount * -1, order_currency_code from public.royalty r
+                         base_discount_amount * -1, voucher_amount * -1, base_voucher_amount * -1, order_currency_code, custom_history_id
+                          , custom_id from public.royalty r
                         where r.order_id = %s
                         AND r.item_type != 'custom')"""
                 cursor.execute(sql, (order['created_at'], order['order_id'],))
@@ -167,7 +169,7 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-07-05' 
+                    AND vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-09-30' 
                     # AND o.entity_id = 1217153
                     # AND o.state = 'complete' AND status = 'complete'
                     """
@@ -836,7 +838,7 @@ def getpromoorders(product_catalog, SkuMap):
         sql = """select * from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  where v.voucher_type != 'purchase' AND
-                    vouchers_purchase_date BETWEEN '2018-06-01' AND '2018-06-02' 
+                    vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-09-30' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -940,9 +942,9 @@ if __name__ == '__main__':
     conn, conn1, conn2 = dbconnection()
     SkuMap = buildskumap()
     product_catalog = catalogproducts()
-    # processcredits()
+    processcredits()
     # customswap()
-    vouchers = getorders()
-    processorders(vouchers, conn1, SkuMap, product_catalog)
+    # vouchers = getorders()
+    # processorders(vouchers, conn1, SkuMap, product_catalog)
     # getpromoorders(product_catalog, SkuMap)
 
