@@ -21,7 +21,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-
+    
     return conn, conn1, conn2
 
 def buildskumap():
@@ -471,13 +471,13 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                     ## Testing
                     data['special_price'] = float(
                         0 if dollars[0]['special_price'] is None else dollars[0]['special_price']) * prorata
-                    data['base_special_price'] = float(0 if dollars[0]['base_special_pricet'] is None
+                    data['base_special_price'] = float(0 if dollars[0]['base_special_price'] is None
                                                          else dollars[0]['base_special_price']) * prorata
 
                     data['owner_discount_amount'] = float(
-                        0 if dollars[0]['owner_discount_amount'] is None else dollars[0]['owner_discount_amount']) * prorata
-                    data['base_owner_discount_amount'] = float(0 if dollars[0]['base_owner_discount_amount'] is None
-                                                         else dollars[0]['base_owner_discount_amount']) * prorata
+                        0 if dollars[0]['owner_discount_price'] is None else dollars[0]['owner_discount_price']) * prorata
+                    data['base_owner_discount_amount'] = float(0 if dollars[0]['base_owner_discount_price'] is None
+                                                         else dollars[0]['base_owner_discount_price']) * prorata
 
                     data['special_owner_discount_price'] = float(
                         0 if dollars[0]['special_owner_discount_price'] is None else dollars[0]['special_owner_discount_price']) * prorata
