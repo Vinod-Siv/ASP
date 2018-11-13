@@ -636,9 +636,22 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
             insertcustomdata(order, dollars, custrec, purchase_type, item_type)
 
 
-def insertcustomdata(order, dollars, custrec):
-        with conn.cursor() as cursor:
-            sql = """select cr.*
+def getcustomrecord(order_id, issue_type):
+    with conn.cursor() as cursor:
+        sql = """   SELECT c.*
+                    FROM uaudio.uad_custom c LEFT JOIN uaudio.vouchers v
+                    ON (c.vouchers_serial = v.vouchers_serial AND v.voucher_type = 'purchase')
+                    WHERE c.orders_id = %s AND c.issue_type = %s 
+                    """
+        cursor.execute(sql, (order_id, issue_type,))
+        custom_rec = cursor.fetchall()
+
+        return custom_rec
+
+
+def insertcustomdata(order, dollars, custrec, purchase_type, item_type):
+    with conn.cursor() as cursor:
+        sql = """select cr.*
                     from uaudio.uad_custom_redeem cr
                     where custom_id = %s AND qty = 1
                     ORDER BY date DESC
