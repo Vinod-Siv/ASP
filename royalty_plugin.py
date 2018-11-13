@@ -5,24 +5,19 @@ import boto3
 import psycopg2
 import json
 import datetime
+import psycopg2.extras
+
 
 def dbconnection():
-
     '''Database connection block
     Access the S3 buckets to get the credentials to access RDS
     Establish a connection to the AWS RDS Mysql
     :return: connection
     '''
 
-    # Code to access S3 bucket
-    # s3 = boto3.client('s3')
-    # obj = s3.get_object(Bucket='bizapps.uaudio', Key='redshift.env.sh')
-    # content = (obj['Body'].read())
-    # env_var = content.decode('ascii')
-    # print(env_var)
 
-    
     return conn, conn1, conn2
+
 
 def buildskumap():
     ''' SKUMAP block
@@ -62,7 +57,6 @@ def buildskumap():
 
 
 def processcredits():
-
     with conn1.cursor() as cursor:
         sql = """select order_id from (select order_id,item_type  from (select distinct order_id, item_type, 
                  rank() over(partition by order_id order by item_type desc) as rnk from public.royalty) where rnk =1)
@@ -71,9 +65,10 @@ def processcredits():
         result = cursor.fetchall()
         orders = tuple([x[0] for x in result if x[0] is not None])
 
-    if len(orders)>0:
+    if len(orders) > 0:
         with conn.cursor() as cursor:
-            sql = "select distinct order_id,  created_at from uaudio.sales_flat_creditmemo where order_id in " + str(orders)
+            sql = "select distinct order_id,  created_at from uaudio.sales_flat_creditmemo where order_id in " + str(
+                orders)
             # print(sql)
             cursor.execute(sql)
             orders = cursor.fetchall()
@@ -98,9 +93,8 @@ def processcredits():
 
 
 def customswap():
-
     with conn1.cursor() as cursor:
-        sql= """select distinct custom_history_id from public.royalty where custom_history_id is not null ;"""
+        sql = """select distinct custom_history_id from public.royalty where custom_history_id is not null ;"""
         cursor.execute(sql)
         history_id = cursor.fetchall()
         history_ids = tuple([x[0] if x[0] is not None else 0 for x in history_id])
@@ -116,39 +110,38 @@ def customswap():
 
         for customorder in result:
             with conn1.cursor() as cursor:
-                sql= """ UPDATE public.royalty SET custom_history_id = %s WHERE custom_id = %s 
+                sql = """ UPDATE public.royalty SET custom_history_id = %s WHERE custom_id = %s 
                             AND item_type = 'custom-redeem' AND custom_history_id is null
                         """
                 #
                 sql1 = """INSERT INTO public.royalty select purchase_type, item_type, order_id, order_increment_id, item_id, customer_id,
-                        order_sku, voucher_serial, custom_serial, sku, %s, (list_price)* -1 , pro_rata,
-                        net_price * -1, base_net_price * -1,
-                        price_incl_tax * -1, base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1,
-                        discount_amount * -1, base_discount_amount * -1, order_currency_code, custom_history_id, 
-                        custom_id
-                         from public.royalty WHERE custom_id = %s AND item_type = 'custom-redeem'
-                         AND custom_history_id = %s """
-
+                          order_sku, voucher_serial, custom_serial, sku, %s, (list_price)* -1 , pro_rata, net_price * -1, 
+                          base_net_price * -1, price_incl_tax * -1, base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1,
+                          discount_amount * -1, base_discount_amount * -1, order_currency_code, custom_history_id, custom_id
+                          from public.royalty WHERE custom_id = %s AND item_type = 'custom-redeem' AND custom_history_id = %s """
 
                 cursor.execute(sql, (customorder['id'], customorder['custom_id']))
-                cursor.execute(sql1, (customorder['custom_history_date'], customorder['custom_id'], customorder['id'], ))
+                cursor.execute(sql1, (customorder['custom_history_date'], customorder['custom_id'], customorder['id'],))
                 affected_rows = cursor.rowcount
                 conn1.commit()
 
                 if affected_rows > 0:
                     with conn1.cursor() as cursor:
-                        sql2= """select order_id AS entity_id, item_id, custom_id, customer_id, order_sku as sku, voucher_serial 
+                        sql2 = """select order_id AS entity_id, item_id, custom_id, customer_id, order_sku as sku, voucher_serial 
                                 from public.royalty WHERE custom_id = %s 
                                  AND list_price > 0"""
-                        cursor.execute(sql2,(customorder['custom_id'],))
+                        cursor.execute(sql2, (customorder['custom_id'],))
                         order = cursor.fetchone()
-                        orders={'entity_id': order[0], 'item_id': order[1], 'custom_id': order[2],
-                                'customer_id': order[3],'sku':order[4],'vouchers_serial':order[5]}
-                        custrec={}
+                        orders = {'entity_id': order[0], 'item_id': order[1], 'custom_id': order[2],
+                                  'customer_id': order[3], 'sku': order[4], 'vouchers_serial': order[5]}
+                        custrec = {}
                         custrec['id'] = customorder['custom_id']
                         custrec['number_plugins'] = customorder['number_plugins']
                         dollars = getinvoiceitemdetails(order[0], order[1])
-                        insertcustomdata(orders, dollars ,custrec)
+                        purchase_type = 'store'
+                        item_type = 'custom-redeem'
+
+                        insertcustomdata(orders, dollars, custrec, purchase_type, item_type)
 
 
 def getorders():
@@ -181,7 +174,6 @@ def getorders():
 
 
 def processorders(vouchers, conn1, SkuMap, product_catalog):
-
     for order in vouchers:
         dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
 
@@ -196,14 +188,17 @@ def processorders(vouchers, conn1, SkuMap, product_catalog):
                                        order['sku'], order['item_id'], order['customer_id'], order['created_at'],
                                        order['additional_data'], order['increment_id'])
                 orderitem = getskusforprodcodes(vouc, SkuMap)
-                builddata(orderitem, product_catalog, dollars, conn1)
+                purchase_type = 'store'
+                issue_type = 'purchase_'
+                builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
         else:
             pass
             # print("Not Store")
             # print(order)
 
 
-def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customerid, createdat, additional_data, increment_id):
+def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customerid, createdat, additional_data,
+                    increment_id):
     '''
     Using voucher serial, list of product codes associated is retrieved
     :param vouchers:
@@ -227,14 +222,13 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
                 WHERE vp.vouchers_serial = %s"""
 
     with conn.cursor() as cursor:
-        cursor.execute(sql, (vouchers, ))
+        cursor.execute(sql, (vouchers,))
         result = cursor.fetchall()
         products = []
-        vouc= dict()
+        vouc = dict()
         for product in result:
             # products.append(int(product['products_code']))
             products.append(product['products_code'])
-
 
         ####Test to eliminate pre owned products from the list of products
         # ownedprods = ownedproducts(orderitem={'customer_id': customerid, 'voucherserial': vouchers, 'created_at': createdat})
@@ -258,7 +252,6 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
 
         # vouc['discount_type'] = ((json.loads(additional_data)).get("discount_type", 'None')) if not None else 'None'
         # print(vouc['discount_type'])
-        print(vouc)
     return vouc
 
 
@@ -270,35 +263,34 @@ def getskusforprodcodes(vouc, SkuMap):
     :return:
     '''
     # vouc has {'orderid': , 'voucherserial': , 'prodcodes': }
-    skus=[]
+    skus = []
     for prodcode in vouc['prodcodes']:
         prodcode = str(prodcode[-5:])
         for key, value in SkuMap.items():
             if prodcode == value:
                 skus.append(key)
     vouc['SKUs'] = skus
-    prodcodes=[]
+    prodcodes = []
     for prodcode in vouc['prodcodes']:
         prodcodes.append(prodcode[-5:])
 
     # print(SkuMap)
     skuprods = dict()
     ChildSkus = []
-    for sku,prod in SkuMap.items():
+    for sku, prod in SkuMap.items():
         prod = prod.split(',')
         if len(list(set(prod).intersection(prodcodes))) == len(prod):
             # print(ChildSkus)
             ChildSkus.append(sku)
-            #TEST
+            # TEST
             # for products in prod:
             #     skuprods[int(products)] = sku
             skuprods[sku] = prod
 
-
-            #END TEST
+            # END TEST
             # print(prodcodes)
             # print(np.setdiff1d(prodcodes,prod))
-            prodcodes = np.setdiff1d(prodcodes,prod)
+            prodcodes = np.setdiff1d(prodcodes, prod)
 
             # if len(prodcodes) >0:
             #     print("**** Diff prod codes")
@@ -309,7 +301,6 @@ def getskusforprodcodes(vouc, SkuMap):
 
 
 def customrorders(orderid):
-
     with conn.cursor() as cursor:
         sql = """select count(*) AS cnt
                     FROM uaudio.uad_custom
@@ -322,8 +313,7 @@ def customrorders(orderid):
         return False
 
 
-def customorderrecord(order, dollars,  conn1):
-
+def customorderrecord(order, dollars, conn1):
     data = dict()
     data['purchase_type'] = 'store'
     data['item_type'] = 'custom'
@@ -335,11 +325,13 @@ def customorderrecord(order, dollars,  conn1):
     data['voucher_serial'] = order['vouchers_serial']
     data['created_at'] = order['created_at']
     data['price_incl_tax'] = float(0 if dollars[0]['price_incl_tax'] is None else dollars[0]['price_incl_tax'])
-    data['base_price_incl_tax'] = float(0 if dollars[0]['base_price_incl_tax'] is None else dollars[0]['base_price_incl_tax'])
+    data['base_price_incl_tax'] = float(
+        0 if dollars[0]['base_price_incl_tax'] is None else dollars[0]['base_price_incl_tax'])
     data['tax_amount'] = float(0 if dollars[0]['tax_amount'] is None else dollars[0]['tax_amount'])
     data['base_tax_amount'] = float(0 if dollars[0]['base_tax_amount'] is None else dollars[0]['base_tax_amount'])
     data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount'])
-    data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount'])
+    data['base_discount_amount'] = float(
+        0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount'])
     data['order_currency_code'] = dollars[0]['order_currency_code']
     data['net_price'] = data['price_incl_tax'] - data['tax_amount'] - data['discount_amount']
     data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data['base_discount_amount']
@@ -350,7 +342,6 @@ def customorderrecord(order, dollars,  conn1):
 
     # data['net_price'] = data['price_incl_tax'] - data['tax_amount']
     # data['base_net_price'] =
-
 
     cur = conn1.cursor()
     insert_quey = """INSERT INTO public.royalty(purchase_type, item_type, order_id, order_increment_id,
@@ -369,12 +360,12 @@ def customorderrecord(order, dollars,  conn1):
                               data['price_incl_tax'], data['base_price_incl_tax'],
                               data['tax_amount'], data['base_tax_amount'],
                               data['discount_amount'], data['base_discount_amount'], data['voucher_amount'],
-                              data['base_voucher_amount'], data['order_currency_code'], ))
+                              data['base_voucher_amount'], data['order_currency_code'],))
     conn1.commit()
     # print(data)
 
 
-def builddata(orderitem, product_catalog,dollars, conn1):
+def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type):
     '''
     Takes each order line and break down into the multiple entries (one for each ASP Sku)
     refers product catalog and matches the list price
@@ -401,11 +392,8 @@ def builddata(orderitem, product_catalog,dollars, conn1):
     else:
         item_type = 'standalone'
 
-
     for skus, prod in orderitem['skuprods'].items():
-        prod=[int(x) for x in prod]
-
-
+        prod = [int(x) for x in prod]
 
         if orderitem['discount_type'] == 'bundle_discount':
             if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
@@ -418,8 +406,8 @@ def builddata(orderitem, product_catalog,dollars, conn1):
 
                 if listprice != 0:
                     data = dict()
-                    data['purchase_type'] = 'store'
-                    data['item_type'] = 'purchase_' + item_type
+                    data['purchase_type'] = purchase_type
+                    data['item_type'] = issue_type + item_type
                     data['order_id'] = orderitem['orderid']
                     data['order_increment_id'] = orderitem['order_increment_id']
                     data['item_id'] = orderitem['item_id']
@@ -452,7 +440,6 @@ def builddata(orderitem, product_catalog,dollars, conn1):
 
                     data['list_price'] = '{0:.2f}'.format(listprice)
 
-
                     data['pro_rata'] = '{0:.3f}'.format((listprice / totallistprice) * 100)
                     prorata = float(listprice / totallistprice)
                     data['price_incl_tax'] = float(
@@ -472,17 +459,20 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                     data['special_price'] = float(
                         0 if dollars[0]['special_price'] is None else dollars[0]['special_price']) * prorata
                     data['base_special_price'] = float(0 if dollars[0]['base_special_price'] is None
-                                                         else dollars[0]['base_special_price']) * prorata
+                                                       else dollars[0]['base_special_price']) * prorata
 
                     data['owner_discount_amount'] = float(
-                        0 if dollars[0]['owner_discount_price'] is None else dollars[0]['owner_discount_price']) * prorata
+                        0 if dollars[0]['owner_discount_price'] is None else dollars[0][
+                            'owner_discount_price']) * prorata
                     data['base_owner_discount_amount'] = float(0 if dollars[0]['base_owner_discount_price'] is None
-                                                         else dollars[0]['base_owner_discount_price']) * prorata
+                                                               else dollars[0]['base_owner_discount_price']) * prorata
 
                     data['special_owner_discount_price'] = float(
-                        0 if dollars[0]['special_owner_discount_price'] is None else dollars[0]['special_owner_discount_price']) * prorata
-                    data['base_special_owner_discount_price'] = float(0 if dollars[0]['base_special_owner_discount_price'] is None
-                                                         else dollars[0]['base_special_owner_discount_price']) * prorata
+                        0 if dollars[0]['special_owner_discount_price'] is None else dollars[0][
+                            'special_owner_discount_price']) * prorata
+                    data['base_special_owner_discount_price'] = float(
+                        0 if dollars[0]['base_special_owner_discount_price'] is None
+                        else dollars[0]['base_special_owner_discount_price']) * prorata
                     ###
 
                     data['order_currency_code'] = dollars[0]['order_currency_code']
@@ -519,7 +509,8 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                                               data['discount_amount'], data['base_discount_amount'],
                                               data['special_price'], data['base_special_price'],
                                               data['owner_discount_amount'], data['base_owner_discount_amount'],
-                                              data['special_owner_discount_price'], data['base_special_owner_discount_price'],
+                                              data['special_owner_discount_price'],
+                                              data['base_special_owner_discount_price'],
                                               data['voucher_amount'],
                                               data['base_voucher_amount'], data['order_currency_code'],))
                     conn1.commit()
@@ -532,8 +523,8 @@ def builddata(orderitem, product_catalog,dollars, conn1):
 
             if listprice != 0:
                 data = dict()
-                data['purchase_type'] = 'store'
-                data['item_type'] = 'purchase_' + item_type
+                data['purchase_type'] = purchase_type
+                data['item_type'] = issue_type + item_type
                 data['order_id'] = orderitem['orderid']
                 data['order_increment_id'] = orderitem['order_increment_id']
                 data['item_id'] = orderitem['item_id']
@@ -579,7 +570,8 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                     0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
                 data['order_currency_code'] = dollars[0]['order_currency_code']
                 data['net_price'] = data['price_incl_tax'] - data['tax_amount'] - data['discount_amount']
-                data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data['base_discount_amount']
+                data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data[
+                    'base_discount_amount']
                 data['voucher_amount'] = float(
                     0 if dollars[0]['voucher_amount'] is None else dollars[0]['voucher_amount']) * prorata
                 data['base_voucher_amount'] = float(
@@ -595,14 +587,15 @@ def builddata(orderitem, product_catalog,dollars, conn1):
                                                                  base_voucher_amount, order_currency_code  ) 
                                                       values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s
                                                                         ,%s, %s,%s, %s, %s,%s, %s, %s, %s, %s, %s)"""
-                cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'], data['order_increment_id'],
-                                          data['item_id'], data['customer_id'], data['order_sku'], data['voucher_serial'],
-                                          data['sku'], data['created_at'], data['list_price'],
-                                          data['pro_rata'], data['net_price'], data['base_net_price'],
-                                          data['price_incl_tax'], data['base_price_incl_tax'],
-                                          data['tax_amount'], data['base_tax_amount'],
-                                          data['discount_amount'], data['base_discount_amount'], data['voucher_amount'],
-                                          data['base_voucher_amount'], data['order_currency_code'],))
+                cur.execute(insert_quey,
+                            (data['purchase_type'], data['item_type'], data['order_id'], data['order_increment_id'],
+                             data['item_id'], data['customer_id'], data['order_sku'], data['voucher_serial'],
+                             data['sku'], data['created_at'], data['list_price'],
+                             data['pro_rata'], data['net_price'], data['base_net_price'],
+                             data['price_incl_tax'], data['base_price_incl_tax'],
+                             data['tax_amount'], data['base_tax_amount'],
+                             data['discount_amount'], data['base_discount_amount'], data['voucher_amount'],
+                             data['base_voucher_amount'], data['order_currency_code'],))
                 conn1.commit()
                 # print(data)
 
@@ -613,19 +606,12 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
     :param order:
     :return:
     """
-    with conn.cursor() as cursor:
-        sql = """   SELECT c.*
-                    FROM uaudio.uad_custom c LEFT JOIN uaudio.vouchers v
-                    ON (c.vouchers_serial = v.vouchers_serial AND v.voucher_type = 'purchase')
-                    WHERE c.orders_id = %s
-                    """
-        cursor.execute(sql, (order['entity_id'],))
-        custom_rec = cursor.fetchall()
+    issue_type = 'purchase'
+    custom_rec = getcustomrecord(order['entity_id'], issue_type)
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
     for custrec in custom_rec:
         with conn1.cursor() as cursor1:
-
             sql = """ SELECT purchase_type,item_type, order_id, order_increment_id, item_id, customer_id,
                         order_sku, voucher_serial, custom_serial, sku, created_at, list_price , pro_rata,
                         net_price * -1, base_net_price *-1,
@@ -642,12 +628,12 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
             # Update when the table structure changes
             record[10] = custrec['redeem_date']
 
-
-            sql=""" INSERT INTO public.royalty values %s;"""
+            sql = """ INSERT INTO public.royalty values %s;"""
             cursor1.execute(sql, (tuple(record),))
+            purchase_type = 'store'
+            item_type = 'custom-redeem'
 
-        ### END TEST
-            insertcustomdata(order, dollars, custrec)
+            insertcustomdata(order, dollars, custrec, purchase_type, item_type)
 
 
 def insertcustomdata(order, dollars, custrec):
@@ -658,75 +644,80 @@ def insertcustomdata(order, dollars, custrec):
                     ORDER BY date DESC
                     LIMIT %s      
              """
-            cursor.execute(sql, (custrec['id'], custrec['number_plugins'],))
-            records = cursor.fetchall()
+        cursor.execute(sql, (custrec['id'], custrec['number_plugins'],))
+        records = cursor.fetchall()
 
-            totallistprice = 0
-            for orderitem in records:
-                sku = orderitem['sku'].replace('UAD-2', 'UAD')
-                listprice = product_catalog.at[sku, 'price']
-                totallistprice += listprice
+        totallistprice = 0
+        for orderitem in records:
+            sku = orderitem['sku'].replace('UAD-2', 'UAD')
+            listprice = product_catalog.at[sku, 'price']
+            totallistprice += listprice
 
-            # buildcustomdata(custrec, product_catalog)
+        # buildcustomdata(custrec, product_catalog)
 
-            for orderitem in records:
-                data = dict()
-                data['purchase_type'] = 'store'
-                data['item_type'] = 'custom-redeem'
-                data['order_id'] = order['entity_id']
-                data['order_increment_id'] = order['increment_id']
-                data['item_id'] = order['item_id']
-                data['custom_id'] = orderitem['custom_id']
-                data['customer_id'] = order['customer_id']
-                data['order_sku'] = order['sku']
-                data['voucher_serial'] = order['vouchers_serial']
-                data['custom_serial'] = orderitem['vouchers_serial']
-                data['custom_history_id'] = orderitem['history_id']
-                # data['prodcode'] = prod
-                # if prod in owned_productcodes:
-                #     data['status'] = 'owned'
-                # else:
-                #     data['status'] = 'issued'
-                data['sku'] = orderitem['sku'].replace('UAD-2', 'UAD')
-                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(orderitem['date'])
-                data['list_price'] = product_catalog.at[data['sku'], 'price']
-                data['pro_rata'] = '{0:.3f}'.format((data['list_price'] / totallistprice)*100)
-                prorata = float(data['list_price'] / totallistprice)
-                data['price_incl_tax'] = float(0 if dollars[0]['price_incl_tax'] is None else dollars[0]['price_incl_tax']) * prorata
-                data['base_price_incl_tax'] = float(0 if dollars[0]['base_price_incl_tax'] is None else dollars[0]['base_price_incl_tax']) * prorata
-                data['tax_amount'] = float(0 if dollars[0]['tax_amount'] is None else dollars[0]['tax_amount']) * prorata
-                data['base_tax_amount'] = float(0 if dollars[0]['base_tax_amount'] is None else dollars[0]['base_tax_amount']) * prorata
-                data['discount_amount'] = float(0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount']) * prorata
-                data['base_discount_amount'] = float(0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
-                data['order_currency_code'] = dollars[0]['order_currency_code']
-                data['custom_history_id'] = orderitem['history_id']
-                data['net_price'] = data['price_incl_tax'] - data['tax_amount'] - data['discount_amount']
-                data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data[
-                    'base_discount_amount']
-                data['voucher_amount'] = float(
-                    0 if dollars[0]['voucher_amount'] is None else dollars[0]['voucher_amount']) * prorata
-                data['base_voucher_amount'] = float(
-                    0 if dollars[0]['base_voucher_amount'] is None else dollars[0]['base_voucher_amount']) * prorata
+        for orderitem in records:
+            data = dict()
+            data['purchase_type'] = purchase_type
+            data['item_type'] = item_type
+            data['order_id'] = order['entity_id']
+            data['order_increment_id'] = order['increment_id']
+            data['item_id'] = order['item_id']
+            data['custom_id'] = orderitem['custom_id']
+            data['customer_id'] = order['customer_id']
+            data['order_sku'] = order['sku']
+            data['voucher_serial'] = order['vouchers_serial']
+            data['custom_serial'] = orderitem['vouchers_serial']
+            data['custom_history_id'] = orderitem['history_id']
+            # data['prodcode'] = prod
+            # if prod in owned_productcodes:
+            #     data['status'] = 'owned'
+            # else:
+            #     data['status'] = 'issued'
+            data['sku'] = orderitem['sku'].replace('UAD-2', 'UAD')
+            data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(orderitem['date'])
+            data['list_price'] = product_catalog.at[data['sku'], 'price']
+            data['pro_rata'] = '{0:.3f}'.format((data['list_price'] / totallistprice) * 100)
+            prorata = float(data['list_price'] / totallistprice)
+            data['price_incl_tax'] = float(
+                0 if dollars[0]['price_incl_tax'] is None else dollars[0]['price_incl_tax']) * prorata
+            data['base_price_incl_tax'] = float(
+                0 if dollars[0]['base_price_incl_tax'] is None else dollars[0]['base_price_incl_tax']) * prorata
+            data['tax_amount'] = float(0 if dollars[0]['tax_amount'] is None else dollars[0]['tax_amount']) * prorata
+            data['base_tax_amount'] = float(
+                0 if dollars[0]['base_tax_amount'] is None else dollars[0]['base_tax_amount']) * prorata
+            data['discount_amount'] = float(
+                0 if dollars[0]['discount_amount'] is None else dollars[0]['discount_amount']) * prorata
+            data['base_discount_amount'] = float(
+                0 if dollars[0]['base_discount_amount'] is None else dollars[0]['base_discount_amount']) * prorata
+            data['order_currency_code'] = dollars[0]['order_currency_code']
+            data['custom_history_id'] = orderitem['history_id']
+            data['net_price'] = data['price_incl_tax'] - data['tax_amount'] - data['discount_amount']
+            data['base_net_price'] = data['base_price_incl_tax'] - data['base_tax_amount'] - data[
+                'base_discount_amount']
+            data['voucher_amount'] = float(
+                0 if dollars[0]['voucher_amount'] is None else dollars[0]['voucher_amount']) * prorata
+            data['base_voucher_amount'] = float(
+                0 if dollars[0]['base_voucher_amount'] is None else dollars[0]['base_voucher_amount']) * prorata
 
-                cur = conn1.cursor()
-                insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s ,%s,
+            cur = conn1.cursor()
+            insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s ,%s,
                                                                     %s, %s,%s, %s, %s,%s, %s, %s, %s, %s, %s, %s,%s,
                                                                     %s, %s, %s, %s,%s, %s)"""
-                cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
-                                          data['order_increment_id'],
-                                          data['item_id'], data['customer_id'], data['order_sku'],
-                                          data['voucher_serial'], data['custom_serial'],
-                                          data['sku'], data['created_at'], data['list_price'],
-                                          data['pro_rata'],
-                                          data['net_price'], data['base_net_price'],
-                                          data['price_incl_tax'], data['base_price_incl_tax'],
-                                          data['tax_amount'], data['base_tax_amount'],
-                                          data['discount_amount'], data['base_discount_amount'],
-                                          None, None, None, None, None, None,
-                                          data['voucher_amount'], data['base_voucher_amount'],
-                                          data['order_currency_code'], data['custom_history_id'], data['custom_id'], ))
-                conn1.commit()
-                # print(data)
+            cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
+                                      data['order_increment_id'],
+                                      data['item_id'], data['customer_id'], data['order_sku'],
+                                      data['voucher_serial'], data['custom_serial'],
+                                      data['sku'], data['created_at'], data['list_price'],
+                                      data['pro_rata'],
+                                      data['net_price'], data['base_net_price'],
+                                      data['price_incl_tax'], data['base_price_incl_tax'],
+                                      data['tax_amount'], data['base_tax_amount'],
+                                      data['discount_amount'], data['base_discount_amount'],
+                                      None, None, None, None, None, None,
+                                      data['voucher_amount'], data['base_voucher_amount'],
+                                      data['order_currency_code'], data['custom_history_id'], data['custom_id'],))
+            conn1.commit()
+            print(data)
 
 
 def ownedproducts(orderitem):
@@ -743,7 +734,7 @@ def ownedproducts(orderitem):
                  AND vouchers_serial != %s
                  AND customers_products_sw_created < %s
                  """
-        cursor.execute(sql, (orderitem['customer_id'], orderitem['voucherserial'], orderitem['created_at'], ))
+        cursor.execute(sql, (orderitem['customer_id'], orderitem['voucherserial'], orderitem['created_at'],))
         owned_products = cursor.fetchall()
     owned_productcodes = []
     for prodcodes in owned_products:
@@ -784,7 +775,6 @@ def catalogproducts():
 
 
 def listpricesum(orderitem, product_catalog, owned_productcodes):
-
     # totallistprice = 0
     # for skus in orderitem['skuprods'].keys():
     #     listprice = product_catalog.at[skus, 'price']
@@ -804,19 +794,17 @@ def listpricesum(orderitem, product_catalog, owned_productcodes):
             try:
                 listprice = product_catalog.at[skus, 'price']
             except KeyError:
-                listprice =0
-    #         ownersku = product_catalog.at[skus, 'owner_sku']
-    #         if ownersku:
-    #             ownersku = list(ownersku.split(','))
+                listprice = 0
+        #         ownersku = product_catalog.at[skus, 'owner_sku']
+        #         if ownersku:
+        #             ownersku = list(ownersku.split(','))
 
-
-
-    #
-    #         if ownersku:
-    #             for prodcodes in ownersku:
-    #                 prodcode = int(prodcodes[2:])
-    #                 if prodcode in owned_productcodes:
-    #                     listprice = product_catalog.at[skus, 'owner_discount']
+        #
+        #         if ownersku:
+        #             for prodcodes in ownersku:
+        #                 prodcode = int(prodcodes[2:])
+        #                 if prodcode in owned_productcodes:
+        #                     listprice = product_catalog.at[skus, 'owner_discount']
         totallistprice += listprice
     return totallistprice
 
@@ -839,9 +827,10 @@ def getinvoiceitemdetails(order_id, item_id):
                     left outer join uaudio.sales_flat_invoice_item it on (i.entity_id = it.parent_id and ot.item_id = it.order_item_id)
                     where o.entity_id = %s AND it.order_item_id = %s        
         """
-        cursor.execute(sql, (order_id, order_id, order_id,item_id,))
+        cursor.execute(sql, (order_id, order_id, order_id, item_id,))
         dollarvalues = cursor.fetchall()
         return dollarvalues
+
 
 def isUltimate(sku):
     with conn.cursor() as cursor:
@@ -851,9 +840,10 @@ def isUltimate(sku):
                 from uaudio.skus) s
                 where s.sku_id = %s
               """
-        cursor.execute(sql, (sku, ))
+        cursor.execute(sql, (sku,))
         res = cursor.fetchone()
         return 1 if res['skus_product_type'] == 'upgrade' else 0
+
 
 def isBundle(sku):
     with conn.cursor() as cursor:
@@ -862,7 +852,7 @@ def isBundle(sku):
                     skus_id LIKE 'UAD-2%%', 'UAD-2','UAD-1'), 'UAD') AS sku_id, skus_bundle
                 from uaudio.skus) s 
                 where s.sku_id = %s"""
-        cursor.execute(sql, (sku, ))
+        cursor.execute(sql, (sku,))
         res = cursor.fetchone()
         return res['skus_bundle']
 
@@ -872,7 +862,7 @@ def getpromoorders(product_catalog, SkuMap):
         sql = """select * from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  where v.voucher_type != 'purchase' AND
-                    vouchers_purchase_date BETWEEN '2018-07-01' AND '2018-09-30' 
+                    vouchers_purchase_date BETWEEN '2018-10-01' AND '2018-11-30' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -880,6 +870,8 @@ def getpromoorders(product_catalog, SkuMap):
 
         for order in promoorders:
             if order['voucher_type'] == 'promo':
+                continue
+                '''
                 if order['skus_id'] == 'UAD-CUSTOM-N':
                     with conn.cursor() as cursor:
                         sql = """select cr.* from uaudio.vouchers v
@@ -915,6 +907,7 @@ def getpromoorders(product_catalog, SkuMap):
                                                       data['sku'], data['created_at'], data['list_price'],))
                             conn1.commit()
                             # print(data)
+
                 else:
                     data = dict()
                     data['purchase_type'] = 'channel'
@@ -936,12 +929,15 @@ def getpromoorders(product_catalog, SkuMap):
                                               data['voucher_serial'], data['sku'], data['created_at'], data['list_price'],))
                     conn1.commit()
                     # print(data)
+                    '''
             elif order['voucher_type'] == 'registration' or order['voucher_type'] == 'nammb2b':
                 voucher = getproductcodes(order['vouchers_serial'], order['voucher_type'],
-                                       order['vouchers_purchase_ordernum'],
-                                       order['skus_id'], None, order['customers_id'], order['vouchers_created'], None)
+                                          order['vouchers_purchase_ordernum'],
+                                          order['skus_id'], None, order['customers_id'], order['vouchers_created'],
+                                          None, None)
 
                 orderitem = getskusforprodcodes(voucher, SkuMap)
+                # print(orderitem)
 
                 if order['voucher_type'] == 'registration':
                     with conn.cursor() as cursor:
@@ -961,16 +957,61 @@ def getpromoorders(product_catalog, SkuMap):
                                     """
                             cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
                             customorder = cursor.fetchone()
+                            '''
                             if customorder:
+                                print(order['voucher_type'])
                                 print(customorder)
                             else:
                                 print("Epicor Order not found for", order['vouchers_serial'])
+                            '''
+
                 elif order['voucher_type'] == 'nammb2b':
-                    print("NAMM")
+                    with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                        sql = """ select * from rpt.salesmargindetail sm join erp.orderdtl od
+                                    ON sm.ordernum = od.ordernum AND sm.orderline = od.orderline
+                                    where od.poline = %s
+                                """
+                        cursor.execute(sql, (order['vouchers_purchase_ordernum'],))
+                        nammrec = cursor.fetchone()
+
+                        if nammrec:
+                            dollars = list()
+                            dollar = dict()
+                            dollar['price_incl_tax'] = nammrec['localprice']
+                            dollar['base_price_incl_tax'] = nammrec['usdprice']
+                            dollar['tax_amount'] = nammrec['localtaxamt']
+                            dollar['base_tax_amount'] = nammrec['localtaxamt']
+                            dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
+                                dollar['base_voucher_amount'] = 0
+                            dollar['order_currency_code'] = nammrec['currencycode']
+                            dollars.append(dollar)
+                            if not orderitem['ASPSkus']:
+                                issue_type = 'nammb2b'
+                                custom_rec = getcustomrecord(order['vouchers_purchase_ordernum'], issue_type)
+                                if custom_rec:
+                                    purchase_type = 'channel'
+                                    item_type = 'nammb2b_custom'
+                                    order['entity_id'] = order['vouchers_purchase_ordernum']
+                                    order['increment_id'] = order['item_id'] = None
+                                    order['sku'] = order['skus_id']
+                                    order['customer_id'] = order['customers_id']
+                                    # insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
+                            else:
+                                print(orderitem)
+                                print(nammrec, '\n')
+                                purchase_type = 'channel'
+                                issue_type = 'nammb2b_'
+                                builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
+
+
+'''
+                else:
+                    print(order['voucher_type'], orderitem)
+
             else:
                 print("Voucher type not handled", order['voucher_type'])
                 # print(order)
-
+'''
 
 if __name__ == '__main__':
     conn, conn1, conn2 = dbconnection()
@@ -978,7 +1019,7 @@ if __name__ == '__main__':
     product_catalog = catalogproducts()
     # processcredits()
     # customswap()
-    vouchers = getorders()
-    processorders(vouchers, conn1, SkuMap, product_catalog)
-    # getpromoorders(product_catalog, SkuMap)
+    # vouchers = getorders()
+    # processorders(vouchers, conn1, SkuMap, product_catalog)
+    getpromoorders(product_catalog, SkuMap)
 
