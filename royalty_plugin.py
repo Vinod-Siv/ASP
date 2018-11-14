@@ -15,7 +15,14 @@ def dbconnection():
     :return: connection
     '''
 
+    # Code to access S3 bucket
+    # s3 = boto3.client('s3')
+    # obj = s3.get_object(Bucket='bizapps.uaudio', Key='redshift.env.sh')
+    # content = (obj['Body'].read())
+    # env_var = content.decode('ascii')
+    # print(env_var)
 
+    
     return conn, conn1, conn2
 
 
@@ -178,7 +185,7 @@ def processorders(vouchers, conn1, SkuMap, product_catalog):
         dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
 
         if order['voucher_type'] == 'purchase':
-            iscustom = customrorders(order['entity_id'])
+            iscustom = customrorders(order['vouchers_serial'])
             if iscustom and order['sku'][:10] == 'UAD-CUSTOM':
                 customorderrecord(order, dollars, conn1)
                 buildcustomdata(order, product_catalog, dollars, conn1)
@@ -300,13 +307,13 @@ def getskusforprodcodes(vouc, SkuMap):
     return vouc
 
 
-def customrorders(orderid):
+def customrorders(vouchers_serial):
     with conn.cursor() as cursor:
         sql = """select count(*) AS cnt
                     FROM uaudio.uad_custom
-                    where orders_id = %s
+                    where vouchers_serial = %s
                     """
-        cursor.execute(sql, (orderid,))
+        cursor.execute(sql, (vouchers_serial,))
         result = cursor.fetchone()
         if result['cnt'] > 0:
             return True
@@ -607,7 +614,7 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
     :return:
     """
     issue_type = 'purchase'
-    custom_rec = getcustomrecord(order['entity_id'], issue_type)
+    custom_rec = getcustomrecord(order['vouchers_serial'])
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
     for custrec in custom_rec:
@@ -636,14 +643,13 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
             insertcustomdata(order, dollars, custrec, purchase_type, item_type)
 
 
-def getcustomrecord(order_id, issue_type):
+def getcustomrecord(vouchers_serial):
     with conn.cursor() as cursor:
         sql = """   SELECT c.*
-                    FROM uaudio.uad_custom c LEFT JOIN uaudio.vouchers v
-                    ON (c.vouchers_serial = v.vouchers_serial AND v.voucher_type = 'purchase')
-                    WHERE c.orders_id = %s AND c.issue_type = %s 
+                    FROM uaudio.uad_custom c
+                    WHERE c.vouchers_serial = %s
                     """
-        cursor.execute(sql, (order_id, issue_type,))
+        cursor.execute(sql, (vouchers_serial,))
         custom_rec = cursor.fetchall()
 
         return custom_rec
@@ -716,21 +722,25 @@ def insertcustomdata(order, dollars, custrec, purchase_type, item_type):
             insert_quey = """INSERT INTO public.royalty values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s ,%s,
                                                                     %s, %s,%s, %s, %s,%s, %s, %s, %s, %s, %s, %s,%s,
                                                                     %s, %s, %s, %s,%s, %s)"""
-            cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
-                                      data['order_increment_id'],
-                                      data['item_id'], data['customer_id'], data['order_sku'],
-                                      data['voucher_serial'], data['custom_serial'],
-                                      data['sku'], data['created_at'], data['list_price'],
-                                      data['pro_rata'],
-                                      data['net_price'], data['base_net_price'],
-                                      data['price_incl_tax'], data['base_price_incl_tax'],
-                                      data['tax_amount'], data['base_tax_amount'],
-                                      data['discount_amount'], data['base_discount_amount'],
-                                      None, None, None, None, None, None,
-                                      data['voucher_amount'], data['base_voucher_amount'],
-                                      data['order_currency_code'], data['custom_history_id'], data['custom_id'],))
-            conn1.commit()
-            print(data)
+            try:
+                cur.execute(insert_quey, (data['purchase_type'], data['item_type'], data['order_id'],
+                                          data['order_increment_id'],
+                                          data['item_id'], data['customer_id'], data['order_sku'],
+                                          data['voucher_serial'], data['custom_serial'],
+                                          data['sku'], data['created_at'], data['list_price'],
+                                          data['pro_rata'],
+                                          data['net_price'], data['base_net_price'],
+                                          data['price_incl_tax'], data['base_price_incl_tax'],
+                                          data['tax_amount'], data['base_tax_amount'],
+                                          data['discount_amount'], data['base_discount_amount'],
+                                          None, None, None, None, None, None,
+                                          data['voucher_amount'], data['base_voucher_amount'],
+                                          data['order_currency_code'], data['custom_history_id'], data['custom_id'],))
+                conn1.commit()
+                print(data)
+            except psycopg2.Error as e:
+                print("Error : ", e)
+                return None
 
 
 def ownedproducts(orderitem):
@@ -875,7 +885,7 @@ def getpromoorders(product_catalog, SkuMap):
         sql = """select * from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  where v.voucher_type != 'purchase' AND
-                    vouchers_purchase_date BETWEEN '2018-10-01' AND '2018-11-30' 
+                    vouchers_purchase_date BETWEEN '2018-11-01' AND '2018-11-30' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -970,15 +980,17 @@ def getpromoorders(product_catalog, SkuMap):
                                     """
                             cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
                             customorder = cursor.fetchone()
-                            '''
-                            if customorder:
-                                print(order['voucher_type'])
-                                print(customorder)
-                            else:
-                                print("Epicor Order not found for", order['vouchers_serial'])
-                            '''
+
+                            # if customorder:
+                            # print(order['voucher_type'])
+                            # print(customorder)
+                            # else:
+                            #     print("Epicor Order not found for", order['vouchers_serial'])
+
+                # Tested part of NAMMB2B
 
                 elif order['voucher_type'] == 'nammb2b':
+
                     with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
                         sql = """ select * from rpt.salesmargindetail sm join erp.orderdtl od
                                     ON sm.ordernum = od.ordernum AND sm.orderline = od.orderline
@@ -1000,7 +1012,7 @@ def getpromoorders(product_catalog, SkuMap):
                             dollars.append(dollar)
                             if not orderitem['ASPSkus']:
                                 issue_type = 'nammb2b'
-                                custom_rec = getcustomrecord(order['vouchers_purchase_ordernum'], issue_type)
+                                custom_rec = getcustomrecord(order['vouchers_serial'])
                                 if custom_rec:
                                     purchase_type = 'channel'
                                     item_type = 'nammb2b_custom'
@@ -1009,12 +1021,18 @@ def getpromoorders(product_catalog, SkuMap):
                                     order['sku'] = order['skus_id']
                                     order['customer_id'] = order['customers_id']
                                     # insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
-                            else:
-                                print(orderitem)
-                                print(nammrec, '\n')
-                                purchase_type = 'channel'
-                                issue_type = 'nammb2b_'
-                                builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
+
+                                else:
+                                    print("New Test !!!!!!!")
+                                    print(orderitem)
+                                    print(nammrec)
+
+                            # else:
+                            #     print(orderitem)
+                            #     print(nammrec, '\n')
+                            #     purchase_type = 'channel'
+                            #     issue_type = 'nammb2b_'
+                            #     builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
 
 
 '''
