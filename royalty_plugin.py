@@ -15,7 +15,7 @@ def dbconnection():
     :return: connection
     '''
 
-    
+
     return conn, conn1, conn2
 
 
@@ -620,6 +620,18 @@ def getcustomrecord(vouchers_serial):
         return custom_rec
 
 
+def iscustomredeemed(customid):
+    with conn.cursor() as cursor:
+        sql = """   SELECT count(*) as cnt
+                FROM uaudio.uad_custom_redeem c
+                WHERE c.custom_id = %s
+                """
+        cursor.execute(sql, (customid,))
+        cnt = cursor.fetchone()
+
+        return True if cnt == 0 else False
+
+
 def insertcustomdata(order, dollars, custrec, purchase_type, item_type):
     with conn.cursor() as cursor:
         sql = """select cr.*
@@ -831,8 +843,9 @@ def getpromoorders(product_catalog, SkuMap):
     with conn.cursor() as cursor:
         sql = """select * from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
-                 where v.voucher_type != 'purchase' AND
-                    vouchers_purchase_date BETWEEN '2018-10-01' AND '2018-11-30' 
+                 WHERE v.voucher_type = 'registration' AND
+                 # WHERE v.voucher_type != 'purchase' AND
+                 v.vouchers_created BETWEEN '2018-10-01' AND '2018-10-05' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -859,7 +872,6 @@ def getpromoorders(product_catalog, SkuMap):
                             data['customer_id'] = order['customers_id']
                             data['order_sku'] = order['vouchers_admin_reason'].strip()
                             data['voucher_serial'] = order['vouchers_serial']
-                            data['custom_serial'] = cust['vouchers_serial']
                             data['sku'] = cust['sku'].replace('UAD-2', 'UAD')
                             data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(cust['date'])
                             data['list_price'] = product_catalog.at[data['sku'], 'price']
@@ -917,7 +929,7 @@ def getpromoorders(product_catalog, SkuMap):
 
                     if serialhist is not None:
                         with conn2.cursor() as cursor:
-                            sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, usdtaxamt, localtaxamt
+                            sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, usdtaxamt, localtaxamt, sm.currencycode, sm.ordernum,sm.orderline
                                         from rpt.salesmargindetail sm join rpt.serialnumberhistory sn
                                         ON sn.ordernum = sm.ordernum AND sn.orderline = sm.orderline
                                       where sn.serialnumber = %s
@@ -926,16 +938,18 @@ def getpromoorders(product_catalog, SkuMap):
                             cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
                             customorder = cursor.fetchone()
 
-                            # if customorder:
-                            # print(order['voucher_type'])
-                            # print(customorder)
-                            # else:
-                            #     print("Epicor Order not found for", order['vouchers_serial'])
+                            if customorder:
+                                print(order['voucher_type'])
+                                print(orderitem)
+                                print(customorder)
+                            else:
+                                print("Epicor Order not found for", order['vouchers_serial'])
 
                 # Tested part of NAMMB2B
 
                 elif order['voucher_type'] == 'nammb2b':
-
+                    print(order)
+                    print(orderitem)
                     with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
                         sql = """ select * from rpt.salesmargindetail sm join erp.orderdtl od
                                     ON sm.ordernum = od.ordernum AND sm.orderline = od.orderline
@@ -945,6 +959,7 @@ def getpromoorders(product_catalog, SkuMap):
                         nammrec = cursor.fetchone()
 
                         if nammrec:
+                            print(nammrec)
                             dollars = list()
                             dollar = dict()
                             dollar['price_incl_tax'] = nammrec['localprice']
@@ -959,18 +974,18 @@ def getpromoorders(product_catalog, SkuMap):
                             if not orderitem['ASPSkus']:
                                 issue_type = 'nammb2b'
                                 custom_rec = getcustomrecord(order['vouchers_serial'])
+                                custom_redeem = iscustomredeemed(custom_rec[0]['id']) if custom_rec else 0
                                 order['entity_id'] = order['vouchers_purchase_ordernum']
                                 order['increment_id'] = order['item_id'] = None
                                 order['sku'] = order['skus_id']
                                 order['customer_id'] = order['customers_id']
-                                if custom_rec:
+                                if custom_rec and custom_redeem:
                                     item_type = 'nammb2b_custom'
                                     # order['entity_id'] = order['vouchers_purchase_ordernum']
                                     # order['increment_id'] = order['item_id'] = None
                                     # order['sku'] = order['skus_id']
                                     # order['customer_id'] = order['customers_id']
                                     insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
-
                                 else:
                                     order['created_at'] = orderitem['created_at']
                                     issue_type = 'nammb2b_custom_notredeemed'
