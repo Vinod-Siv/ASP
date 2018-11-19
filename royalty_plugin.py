@@ -1,11 +1,4 @@
-import pymysql
-import numpy as np
-import pandas as pd
-import boto3
-import psycopg2
-import json
-import datetime
-import psycopg2.extras
+import pymysql, numpy as np, pandas as pd, boto3, psycopg2, json, re, datetime, psycopg2.extras
 
 
 def dbconnection():
@@ -839,7 +832,7 @@ def isBundle(sku):
         return res['skus_bundle']
 
 
-def getpromoorders(product_catalog, SkuMap):
+def getchannelorders(product_catalog, SkuMap):
     with conn.cursor() as cursor:
         sql = """select * from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
@@ -928,7 +921,7 @@ def getpromoorders(product_catalog, SkuMap):
                         serialhist = cursor.fetchone()
 
                     if serialhist is not None:
-                        with conn2.cursor() as cursor:
+                        with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
                             sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, usdtaxamt, localtaxamt, sm.currencycode, sm.ordernum,sm.orderline
                                         from rpt.salesmargindetail sm join rpt.serialnumberhistory sn
                                         ON sn.ordernum = sm.ordernum AND sn.orderline = sm.orderline
@@ -939,9 +932,34 @@ def getpromoorders(product_catalog, SkuMap):
                             customorder = cursor.fetchone()
 
                             if customorder:
-                                print(order['voucher_type'])
-                                print(orderitem)
-                                print(customorder)
+
+                                p = re.compile(r'\bCUSTOM*\b | \bULTIMATE[0-9]*\b', flags=re.I | re.X)
+                                m = p.search(orderitem['ordersku'])
+
+                                if m:
+                                    print(orderitem)
+                                    print(customorder)
+
+                                    with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                                        sql = """select  pp.* from erp.custgruppricelst cp Join erp.pricelst p ON cp.listcode = p.listcode
+                                                   join erp.pricelstparts pp ON pp.listcode = p.listcode
+                                                  where groupcode = %s
+                                                    AND p.currencycode = %s
+                                                  AND %s between startdate and enddate
+                                                  AND partnum = (
+                                                select ua.character01 as part_num from erp.customer c JOIN erp.customer_ud cu ON c.sysrowid = cu.foreignsysrowid
+                                                  JOIN ice.ud100a ua ON cu.partlistid_c = ua.key1
+                                                  join ice.ud01 ud ON ua.character02 = ud.shortchar02
+                                                where c.custid = %s
+                                                      AND ud.shortchar07 = %s
+                                                limit 1)
+                                        """
+                                        cursor.execute(sql, (
+                                        customorder['groupcode'], customorder['currencycode'], orderitem['created_at'],
+                                        customorder['custid'], orderitem['ordersku'],))
+                                        base_price = cursor.fetchone()
+                                        print(base_price)
+
                             else:
                                 print("Epicor Order not found for", order['vouchers_serial'])
 
@@ -1013,5 +1031,5 @@ if __name__ == '__main__':
     # customswap()
     # vouchers = getorders()
     # processorders(vouchers, conn1, SkuMap, product_catalog)
-    getpromoorders(product_catalog, SkuMap)
+    getchannelorders(product_catalog, SkuMap)
 
