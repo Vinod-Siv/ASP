@@ -629,7 +629,7 @@ def iscustomredeemed(customid):
         cursor.execute(sql, (customid,))
         cnt = cursor.fetchone()
 
-        return True if cnt == 0 else False
+        return True if cnt != 0 else False
 
 
 def insertcustomdata(order, dollars, custrec, purchase_type, item_type):
@@ -824,7 +824,15 @@ def isUltimate(sku):
               """
         cursor.execute(sql, (sku,))
         res = cursor.fetchone()
-        return 1 if res['skus_product_type'] == 'upgrade' else 0
+
+        if res is None:
+            return 0
+        elif res['skus_product_type'] == 'upgrade':
+            return 1
+        else:
+            return 0
+
+        # return 1 if res['skus_product_type'] == 'upgrade' else 0
 
 
 def isBundle(sku):
@@ -836,7 +844,12 @@ def isBundle(sku):
                 where s.sku_id = %s"""
         cursor.execute(sql, (sku,))
         res = cursor.fetchone()
-        return res['skus_bundle']
+
+        if res is None:
+            return 0
+        else:
+            return res['skus_bundle']
+        # return res['skus_bundle']
 
 
 def getchannelorders(product_catalog, SkuMap):
@@ -927,10 +940,16 @@ def getchannelorders(product_catalog, SkuMap):
                         cursor.execute(sql, (order['vouchers_serial'],))
                         serialhist = cursor.fetchone()
 
+                    dollars = list()
+                    dollar = dict()
+                    dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
+                        dollar['base_voucher_amount'] = dollar['price_incl_tax'] = dollar['base_price_incl_tax'] = \
+                        dollar['tax_amount'] = dollar['base_tax_amount'] = dollar['order_currency_code'] = 0
+
                     if serialhist is not None:
                         with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-                            sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, usdtaxamt, 
-                                        localtaxamt, sm.currencycode, sm.ordernum,sm.orderline
+                            sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, coalesce(nullif(usdtaxamt,0)/quantity,0) as usdtaxamt, 
+                                        coalesce(nullif(localtaxamt,0)/quantity,0) as localtaxamt, sm.currencycode, sm.ordernum,sm.orderline
                                         from rpt.salesmargindetail sm join rpt.serialnumberhistory sn
                                         ON sn.ordernum = sm.ordernum AND sn.orderline = sm.orderline
                                       where sn.serialnumber = %s
@@ -977,23 +996,46 @@ def getchannelorders(product_catalog, SkuMap):
                                         customorder['localprice'] = local_price_delta
                                         customorder['usdprice'] = usd_delta_price
 
-                                dollars = list()
-                                dollar = dict()
                                 dollar['price_incl_tax'] = customorder['localprice']
                                 dollar['base_price_incl_tax'] = customorder['usdprice']
                                 dollar['tax_amount'] = customorder['localtaxamt']
                                 dollar['base_tax_amount'] = customorder['localtaxamt']
-                                dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
-                                    dollar['base_voucher_amount'] = 0
+
                                 dollar['order_currency_code'] = customorder['currencycode']
-                                dollars.append(dollar)
+                        print('*******', customorder)
+                    dollars.append(dollar)
+                    print(orderitem)
+                    print(dollar)
 
-                                print("**********", orderitem, dollar)
+                    p = re.compile(r'\bCUSTOM*\b', flags=re.I | re.X)
+                    m = p.search(orderitem['ordersku'])
+                    purchase_type = 'channel'
 
-                            else:
-                                print(orderitem)
-                                print(customorder)
-                                print("Epicor Order not found for", order['vouchers_serial'], "----", serialhist)
+                    if m:
+                        print('m:', m)
+                        custom_rec = getcustomrecord(order['vouchers_serial'])
+                        print('custom_rec', custom_rec)
+                        custom_redeem = iscustomredeemed(custom_rec[0]['id']) if custom_rec else 0
+                        print('custom_redeem', custom_redeem)
+                        order['entity_id'] = order['vouchers_purchase_ordernum']
+                        order['increment_id'] = order['item_id'] = None
+                        order['sku'] = order['skus_id']
+                        order['customer_id'] = order['customers_id']
+                        if custom_rec and custom_redeem:
+                            item_type = 'hw/sw_custom'
+                            insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
+                        else:
+                            order['created_at'] = orderitem['created_at']
+                            issue_type = 'hw/sw_custom_notredeemed'
+                            customorderrecord(order, dollars, purchase_type, issue_type)
+
+                        # order['created_at'] = orderitem['created_at']
+                        # issue_type = 'hw/sw-custom'
+                        # customorderrecord(order, dollars, purchase_type, issue_type)
+                    else:
+                        issue_type = 'hw/sw'
+                        builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
+
 
                 # Tested part of NAMMB2B
 
