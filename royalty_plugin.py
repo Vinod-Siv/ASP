@@ -8,6 +8,13 @@ def dbconnection():
     :return: connection
     '''
 
+    # Code to access S3 bucket
+    # s3 = boto3.client('s3')
+    # obj = s3.get_object(Bucket='bizapps.uaudio', Key='redshift.env.sh')
+    # content = (obj['Body'].read())
+    # env_var = content.decode('ascii')
+    # print(env_var)
+
 
     return conn, conn1, conn2
 
@@ -838,7 +845,7 @@ def getchannelorders(product_catalog, SkuMap):
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  WHERE v.voucher_type = 'registration' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 v.vouchers_created BETWEEN '2018-10-01' AND '2018-10-05' 
+                 v.vouchers_created BETWEEN '2018-09-01' AND '2018-09-30' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -922,11 +929,13 @@ def getchannelorders(product_catalog, SkuMap):
 
                     if serialhist is not None:
                         with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-                            sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, usdtaxamt, localtaxamt, sm.currencycode, sm.ordernum,sm.orderline
+                            sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, usdtaxamt, 
+                                        localtaxamt, sm.currencycode, sm.ordernum,sm.orderline
                                         from rpt.salesmargindetail sm join rpt.serialnumberhistory sn
                                         ON sn.ordernum = sm.ordernum AND sn.orderline = sm.orderline
                                       where sn.serialnumber = %s
-                                      AND sm.shipstatus = 'Shipped' AND sn.shipped = 1
+                                      --AND sm.shipstatus = 'Shipped' 
+                                      AND sn.shipped = 1
                                     """
                             cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
                             customorder = cursor.fetchone()
@@ -937,14 +946,11 @@ def getchannelorders(product_catalog, SkuMap):
                                 m = p.search(orderitem['ordersku'])
 
                                 if m:
-                                    print(orderitem)
-                                    print(customorder)
-
                                     with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-                                        sql = """select  pp.* from erp.custgruppricelst cp Join erp.pricelst p ON cp.listcode = p.listcode
+                                        sql = """select  pp.baseprice from erp.custgruppricelst cp Join erp.pricelst p ON cp.listcode = p.listcode
                                                    join erp.pricelstparts pp ON pp.listcode = p.listcode
                                                   where groupcode = %s
-                                                    AND p.currencycode = %s
+                                                  AND p.currencycode = %s
                                                   AND %s between startdate and enddate
                                                   AND partnum = (
                                                 select ua.character01 as part_num from erp.customer c JOIN erp.customer_ud cu ON c.sysrowid = cu.foreignsysrowid
@@ -958,10 +964,36 @@ def getchannelorders(product_catalog, SkuMap):
                                         customorder['groupcode'], customorder['currencycode'], orderitem['created_at'],
                                         customorder['custid'], orderitem['ordersku'],))
                                         base_price = cursor.fetchone()
-                                        print(base_price)
+                                        # print("Base Price", base_price)
+                                        local_price_delta = round(customorder['localprice'] - base_price['baseprice'],
+                                                                  2) if base_price is not None else customorder[
+                                            'localprice']
+                                        # print("Price Delta", local_price_delta)
+                                        ex_rate = customorder['usdprice'] / customorder['localprice']
+                                        usd_delta_price = round(local_price_delta * ex_rate, 2)
+                                        # print(usd_delta_price)
+
+                                        ## Testing
+                                        customorder['localprice'] = local_price_delta
+                                        customorder['usdprice'] = usd_delta_price
+
+                                dollars = list()
+                                dollar = dict()
+                                dollar['price_incl_tax'] = customorder['localprice']
+                                dollar['base_price_incl_tax'] = customorder['usdprice']
+                                dollar['tax_amount'] = customorder['localtaxamt']
+                                dollar['base_tax_amount'] = customorder['localtaxamt']
+                                dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
+                                    dollar['base_voucher_amount'] = 0
+                                dollar['order_currency_code'] = customorder['currencycode']
+                                dollars.append(dollar)
+
+                                print("**********", orderitem, dollar)
 
                             else:
-                                print("Epicor Order not found for", order['vouchers_serial'])
+                                print(orderitem)
+                                print(customorder)
+                                print("Epicor Order not found for", order['vouchers_serial'], "----", serialhist)
 
                 # Tested part of NAMMB2B
 
