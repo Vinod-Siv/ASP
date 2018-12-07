@@ -15,7 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-
+    
     return conn, conn1, conn2
 
 
@@ -363,17 +363,19 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
         owned_productcodes.append(int(prodcodes[2:]))
 
     totallistprice = listpricesum(orderitem, product_catalog, owned_productcodes)
+    item_type = ''
 
-    if isUltimate(orderitem['ordersku']):
-        item_type = 'ultimate'
-        if orderitem['discount_type'] == 'bundle_discount':
-            item_type = 'ultimate-upgrade'
-    elif isBundle(orderitem['ordersku']) == 1:
-        item_type = 'bundle'
-        if orderitem['discount_type'] == 'bundle_discount':
-            item_type = 'bundle_upgrade'
-    else:
-        item_type = 'standalone'
+    if issue_type.find('hw/sw') == -1:
+        if isUltimate(orderitem['ordersku']):
+            item_type = 'ultimate'
+            if orderitem['discount_type'] == 'bundle_discount':
+                item_type = 'ultimate-upgrade'
+        elif isBundle(orderitem['ordersku']) == 1:
+            item_type = 'bundle'
+            if orderitem['discount_type'] == 'bundle_discount':
+                item_type = 'bundle_upgrade'
+        else:
+            item_type = 'standalone'
 
     for skus, prod in orderitem['skuprods'].items():
         prod = [int(x) for x in prod]
@@ -858,8 +860,8 @@ def getchannelorders(product_catalog, SkuMap):
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  WHERE v.voucher_type = 'registration' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 # v.vouchers_serial = 'BL5M-VDP8-0BEN-HPE0' AND
-                 v.vouchers_created BETWEEN '2018-09-01' AND '2018-09-30' 
+                 # v.vouchers_serial = '06JX-EV42-EVKD-AGJ0' AND
+                 v.vouchers_created BETWEEN '2018-07-01' AND '2018-09-30' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -1034,7 +1036,11 @@ def getchannelorders(product_catalog, SkuMap):
                         # issue_type = 'hw/sw-custom'
                         # customorderrecord(order, dollars, purchase_type, issue_type)
                     else:
-                        issue_type = 'hw/sw'
+                        if orderitem['ordersku'].find('ULTIMATE') != -1:
+                            issue_type = 'hw/sw_ultimate'
+                        else:
+                            issue_type = 'hw/sw_bundle'
+
                         builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
 
 
