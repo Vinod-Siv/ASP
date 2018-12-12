@@ -470,6 +470,8 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                         0 if dollars[0]['base_voucher_amount'] is None else dollars[0]['base_voucher_amount']) * prorata
 
                     data['custom_serial'] = data['custom_history_id'] = data['custom_id'] = None
+                    data['hw_serialnumber'] = dollars[0]['hw_serialnum'] if dollars[0][
+                                                                                'hw_serialnum'] is not None else None
 
                     insertdata(data)
                     # print(data)
@@ -539,6 +541,7 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                     data['base_owner_discount_amount'] = data['special_owner_discount_price'] = data[
                     'base_special_owner_discount_price'] = \
                     data['custom_history_id'] = data['custom_id'] = None
+                data['hw_serialnumber'] = dollars[0]['hw_serialnum'] if dollars[0]['hw_serialnum'] is not None else None
 
                 insertdata(data)
 
@@ -552,9 +555,9 @@ def insertdata(data):
                                                 special_price, base_special_price, owner_discount_amount, 
                                                 base_owner_discount_amount, special_owner_discount_price, 
                                                 base_special_owner_discount_price, voucher_amount, base_voucher_amount,
-                                                order_currency_code, custom_history_id, custom_id) 
+                                                order_currency_code, custom_history_id, custom_id, hw_serialnumber) 
                                                 values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s, %s, %s, %s,%s, %s, 
-                                                %s,%s, %s, %s, %s, %s ,%s, %s,%s, %s, %s,%s, %s, %s, %s)"""
+                                                %s,%s, %s, %s, %s, %s ,%s, %s,%s, %s, %s,%s, %s, %s, %s, %s)"""
     try:
         cur.execute(insert_quey,
                     (data['purchase_type'], data['item_type'], data['order_id'], data['order_increment_id'],
@@ -567,7 +570,8 @@ def insertdata(data):
                      data['base_owner_discount_amount'], data['special_owner_discount_price'],
                      data['base_special_owner_discount_price'], data['voucher_amount'],
                      data['base_voucher_amount'], data['order_currency_code'], data['custom_history_id'],
-                     data['custom_id'],))
+                     data['custom_id'],
+                     data['hw_serialnumber'],))
         conn1.commit()
     except psycopg2.Error as e:
         print("Error : ", e)
@@ -700,6 +704,8 @@ def insertcustomdata(order, dollars, custrec, purchase_type, item_type):
             data['special_price'] = data['base_special_price'] = data['owner_discount_amount'] = \
                 data['base_owner_discount_amount'] = data['special_owner_discount_price'] = \
                 data['base_special_owner_discount_price'] = None
+
+            data['hw_serialnumber'] = dollars[0]['hw_serialnum'] if dollars[0]['hw_serialnum'] is not None else None
 
             insertdata(data)
 
@@ -860,7 +866,7 @@ def getchannelorders(product_catalog, SkuMap):
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  WHERE v.voucher_type = 'registration' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 # v.vouchers_serial = '06JX-EV42-EVKD-AGJ0' AND
+                 # v.vouchers_serial = '04Q1-ET32-TRK1-G6H0' AND
                  v.vouchers_created BETWEEN '2018-07-01' AND '2018-09-30' 
                  order by v.vouchers_serial      
         """
@@ -945,6 +951,20 @@ def getchannelorders(product_catalog, SkuMap):
                         serialhist = cursor.fetchone()
 
                     if serialhist is not None:
+
+                        print(serialhist)
+
+                        with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                            sql = " select ordernum, orderline from rpt.serialnumberhistory where serialnumber = %s AND shipped =1 "
+                            cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
+                            serialdetail = cursor.fetchone()
+
+                        orderitem['orderid'] = orderitem['item_id'] = order['entity_id'] = order['item_id'] = None
+
+                        if serialdetail:
+                            orderitem['orderid'] = order['entity_id'] = serialdetail['ordernum']
+                            orderitem['item_id'] = order['item_id'] = serialdetail['orderline']
+
                         with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
                             sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, coalesce(nullif(usdtaxamt,0)/quantity,0) as usdtaxamt, 
                                         coalesce(nullif(localtaxamt,0)/quantity,0) as localtaxamt, sm.currencycode, sm.ordernum,sm.orderline
@@ -961,12 +981,15 @@ def getchannelorders(product_catalog, SkuMap):
                             dollar = dict()
                             dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
                                 dollar['base_voucher_amount'] = dollar['price_incl_tax'] = dollar[
-                                'base_price_incl_tax'] = \
-                                dollar['tax_amount'] = dollar['base_tax_amount'] = dollar['order_currency_code'] = 0
+                                'base_price_incl_tax'] = dollar['hw_serialnum'] = \
+                                dollar['tax_amount'] = dollar['base_tax_amount'] = 0
+                            dollar['order_currency_code'] = 'USD'
+
+                            dollar['hw_serialnum'] = serialhist['customers_products_hw_serial']
 
                             if customorder:
 
-                                p = re.compile(r'\bCUSTOM*\b | \bULTIMATE[0-9]*\b', flags=re.I | re.X)
+                                p = re.compile(r'\bCUSTOM*\b |\bULTIMATE[0-9]*\b', flags=re.I | re.X)
                                 m = p.search(orderitem['ordersku'])
 
                                 if m:
@@ -988,15 +1011,13 @@ def getchannelorders(product_catalog, SkuMap):
                                         customorder['groupcode'], customorder['currencycode'], orderitem['created_at'],
                                         customorder['custid'], orderitem['ordersku'],))
                                         base_price = cursor.fetchone()
-                                        # print("Base Price", base_price)
                                         local_price_delta = round(customorder['localprice'] - base_price['baseprice'],
                                                                   2) if base_price is not None else customorder[
                                             'localprice']
-                                        ex_rate = customorder['usdprice'] / customorder['localprice']
+                                        ex_rate = customorder['usdprice'] / customorder['localprice'] if customorder[
+                                            'localprice'] else 0
                                         usd_delta_price = round(local_price_delta * ex_rate, 2)
-                                        # print(usd_delta_price)
 
-                                        ## Testing
                                         customorder['localprice'] = local_price_delta
                                         customorder['usdprice'] = usd_delta_price
 
@@ -1005,36 +1026,31 @@ def getchannelorders(product_catalog, SkuMap):
                                     dollar['tax_amount'] = customorder['localtaxamt']
                                     dollar['base_tax_amount'] = customorder['localtaxamt']
                                     dollar['order_currency_code'] = customorder['currencycode']
-                        print('*******', customorder)
+
+                                    print(customorder)
+                                    print('dollar', dollar)
+
                         dollars.append(dollar)
-                        print(orderitem)
-                        print(dollar)
 
                     p = re.compile(r'\bCUSTOM*\b', flags=re.I | re.X)
                     m = p.search(orderitem['ordersku'])
                     purchase_type = 'channel'
 
                     if m:
-                        print('m:', m)
                         custom_rec = getcustomrecord(order['vouchers_serial'])
-                        print('custom_rec', custom_rec)
                         custom_redeem = iscustomredeemed(custom_rec[0]['id']) if custom_rec else 0
-                        print('custom_redeem', custom_redeem)
-                        order['entity_id'] = order['vouchers_purchase_ordernum']
-                        order['increment_id'] = order['item_id'] = None
+                        order['increment_id'] = None
                         order['sku'] = order['skus_id']
                         order['customer_id'] = order['customers_id']
+
                         if custom_rec and custom_redeem:
+                            dollar['price_incl_tax'] = dollar['base_price_incl_tax'] = custom_rec[0]['asp']
                             item_type = 'hw/sw_custom'
                             insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
                         else:
                             order['created_at'] = orderitem['created_at']
                             issue_type = 'hw/sw_custom_notredeemed'
                             customorderrecord(order, dollars, purchase_type, issue_type)
-
-                        # order['created_at'] = orderitem['created_at']
-                        # issue_type = 'hw/sw-custom'
-                        # customorderrecord(order, dollars, purchase_type, issue_type)
                     else:
                         if orderitem['ordersku'].find('ULTIMATE') != -1:
                             issue_type = 'hw/sw_ultimate'
