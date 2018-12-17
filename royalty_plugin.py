@@ -344,6 +344,7 @@ def customorderrecord(order, dollars, purchase_type, issue_type):
         data['base_special_price'] = data['owner_discount_amount'] = data['base_owner_discount_amount'] = \
         data['special_owner_discount_price'] = data['base_special_owner_discount_price'] = \
         data['custom_history_id'] = data['custom_id'] = data['item_id'] = None
+    data['hw_serialnumber'] = dollars[0]['hw_serialnum'] if dollars[0]['hw_serialnum'] is not None else None
 
     insertdata(data)
 
@@ -866,7 +867,7 @@ def getchannelorders(product_catalog, SkuMap):
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  WHERE v.voucher_type = 'registration' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 # v.vouchers_serial = '04Q1-ET32-TRK1-G6H0' AND
+                 v.vouchers_serial = 'WF69-PVGG-0NXC-40H0' AND
                  v.vouchers_created BETWEEN '2018-07-01' AND '2018-09-30' 
                  order by v.vouchers_serial      
         """
@@ -950,20 +951,29 @@ def getchannelorders(product_catalog, SkuMap):
                         cursor.execute(sql, (order['vouchers_serial'],))
                         serialhist = cursor.fetchone()
 
+                    dollars = list()
+                    dollar = dict()
+                    dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
+                    dollar['base_voucher_amount'] = dollar['price_incl_tax'] = dollar['base_price_incl_tax'] = \
+                    dollar['hw_serialnum'] = dollar['tax_amount'] = dollar['base_tax_amount'] = orderitem['orderid']\
+                    = orderitem['item_id'] = order['entity_id'] = order['item_id'] = None
+                    dollar['order_currency_code'] = 'USD'
+
+
                     if serialhist is not None:
 
                         print(serialhist)
 
                         with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-                            sql = " select ordernum, orderline from rpt.serialnumberhistory where serialnumber = %s AND shipped =1 "
+                            sql = " select ordernum, orderline, trandate from rpt.serialnumberhistory where serialnumber = %s AND shipped =1 "
                             cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
                             serialdetail = cursor.fetchone()
 
-                        orderitem['orderid'] = orderitem['item_id'] = order['entity_id'] = order['item_id'] = None
 
                         if serialdetail:
                             orderitem['orderid'] = order['entity_id'] = serialdetail['ordernum']
                             orderitem['item_id'] = order['item_id'] = serialdetail['orderline']
+
 
                         with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
                             sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, coalesce(nullif(usdtaxamt,0)/quantity,0) as usdtaxamt, 
@@ -977,13 +987,6 @@ def getchannelorders(product_catalog, SkuMap):
                             cursor.execute(sql, (serialhist['customers_products_hw_serial'],))
                             customorder = cursor.fetchone()
 
-                            dollars = list()
-                            dollar = dict()
-                            dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
-                                dollar['base_voucher_amount'] = dollar['price_incl_tax'] = dollar[
-                                'base_price_incl_tax'] = dollar['hw_serialnum'] = \
-                                dollar['tax_amount'] = dollar['base_tax_amount'] = 0
-                            dollar['order_currency_code'] = 'USD'
 
                             dollar['hw_serialnum'] = serialhist['customers_products_hw_serial']
 
@@ -1008,7 +1011,7 @@ def getchannelorders(product_catalog, SkuMap):
                                                 limit 1)
                                         """
                                         cursor.execute(sql, (
-                                        customorder['groupcode'], customorder['currencycode'], orderitem['created_at'],
+                                        customorder['groupcode'], customorder['currencycode'], serialdetail['trandate'],
                                         customorder['custid'], orderitem['ordersku'],))
                                         base_price = cursor.fetchone()
                                         local_price_delta = round(customorder['localprice'] - base_price['baseprice'],
@@ -1030,11 +1033,12 @@ def getchannelorders(product_catalog, SkuMap):
                                     print(customorder)
                                     print('dollar', dollar)
 
-                        dollars.append(dollar)
+                    dollars.append(dollar)
 
                     p = re.compile(r'\bCUSTOM*\b', flags=re.I | re.X)
                     m = p.search(orderitem['ordersku'])
                     purchase_type = 'channel'
+
 
                     if m:
                         custom_rec = getcustomrecord(order['vouchers_serial'])
