@@ -15,7 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    
+   
     return conn, conn1, conn2
 
 
@@ -587,6 +587,8 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
     """
     issue_type = 'purchase'
     custom_rec = getcustomrecord(order['vouchers_serial'])
+    print(custom_rec)
+    print('vouc', order['vouchers_serial'])
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
     for custrec in custom_rec:
@@ -600,14 +602,16 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
                         base_special_owner_discount_price * -1, voucher_amount *-1, base_voucher_amount *-1,
                         order_currency_code
                         FROM public.royalty
-                        WHERE order_id = %s 
+                        WHERE voucher_serial = %s 
 --                        AND item_type = 'custom'
                         AND item_type IN ('custom', 'nammb2b_custom')
                     """
-            cursor1.execute(sql, (custrec['orders_id'],))
+            cursor1.execute(sql, (order['vouchers_serial'],))
             record = list(cursor1.fetchone())
             # Update when the table structure changes
             record[10] = custrec['redeem_date']
+
+            print('record', record)
 
             sql = """ INSERT INTO public.royalty values %s;"""
             cursor1.execute(sql, (tuple(record),))
@@ -870,7 +874,7 @@ def getchannelorders(product_catalog, SkuMap):
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  WHERE v.voucher_type = 'nammb2b' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 v.vouchers_serial = 'TXWL-XTF4-837V-28H0' AND
+                 v.vouchers_serial = '0EAR-EH62-NRKH-LAH0' AND
                  v.vouchers_created BETWEEN '2018-10-01' AND '2018-12-19' 
                  order by v.vouchers_serial      
         """
