@@ -600,7 +600,9 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
                         base_special_owner_discount_price * -1, voucher_amount *-1, base_voucher_amount *-1,
                         order_currency_code
                         FROM public.royalty
-                        WHERE order_id = %s AND item_type = 'custom'
+                        WHERE order_id = %s 
+--                        AND item_type = 'custom'
+                        AND item_type IN ('custom', 'nammb2b_custom')
                     """
             cursor1.execute(sql, (custrec['orders_id'],))
             record = list(cursor1.fetchone())
@@ -609,8 +611,9 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
 
             sql = """ INSERT INTO public.royalty values %s;"""
             cursor1.execute(sql, (tuple(record),))
-            purchase_type = 'store'
-            item_type = 'custom-redeem'
+
+            purchase_type = record[0]
+            item_type = record[1] + '_redeem'
 
             insertcustomdata(order, dollars, custrec, purchase_type, item_type)
 
@@ -865,10 +868,10 @@ def getchannelorders(product_catalog, SkuMap):
     with conn.cursor() as cursor:
         sql = """select * from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
-                 WHERE v.voucher_type = 'registration' AND
+                 WHERE v.voucher_type = 'nammb2b' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 v.vouchers_serial = 'WF69-PVGG-0NXC-40H0' AND
-                 v.vouchers_created BETWEEN '2018-07-01' AND '2018-09-30' 
+                 v.vouchers_serial = 'TXWL-XTF4-837V-28H0' AND
+                 v.vouchers_created BETWEEN '2018-10-01' AND '2018-12-19' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
@@ -1048,7 +1051,13 @@ def getchannelorders(product_catalog, SkuMap):
                         order['customer_id'] = order['customers_id']
 
                         if custom_rec and custom_redeem:
-                            dollar['price_incl_tax'] = dollar['base_price_incl_tax'] = custom_rec[0]['asp']
+                            if dollar['base_price_incl_tax'] is None: dollar['base_price_incl_tax'] = custom_rec[0]['asp']
+                            if dollar['price_incl_tax'] is None: dollar['price_incl_tax'] = custom_rec[0]['asp'] * (ex_rate if ex_rate is not None else 1)
+
+                            print("dollar['base_price_incl_tax'] :", dollar['base_price_incl_tax'] )
+                            print("dollar['price_incl_tax'] :", dollar['price_incl_tax'])
+
+
                             item_type = 'hw/sw_custom'
                             insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
                         else:
@@ -1088,6 +1097,7 @@ def getchannelorders(product_catalog, SkuMap):
                             dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
                                 dollar['base_voucher_amount'] = 0
                             dollar['order_currency_code'] = nammrec['currencycode']
+                            dollar['hw_serialnum'] = None
                             dollars.append(dollar)
                             purchase_type = 'channel'
                             if not orderitem['ASPSkus']:
@@ -1098,17 +1108,23 @@ def getchannelorders(product_catalog, SkuMap):
                                 order['increment_id'] = order['item_id'] = None
                                 order['sku'] = order['skus_id']
                                 order['customer_id'] = order['customers_id']
-                                if custom_rec and custom_redeem:
-                                    item_type = 'nammb2b_custom'
-                                    # order['entity_id'] = order['vouchers_purchase_ordernum']
-                                    # order['increment_id'] = order['item_id'] = None
-                                    # order['sku'] = order['skus_id']
-                                    # order['customer_id'] = order['customers_id']
-                                    insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
-                                else:
-                                    order['created_at'] = orderitem['created_at']
-                                    issue_type = 'nammb2b_custom_notredeemed'
-                                    customorderrecord(order, dollars, purchase_type, issue_type)
+
+                                # Testing
+
+                                # if custom_rec and custom_redeem:
+                                #     item_type = 'nammb2b_custom'
+                                #     insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
+                                # else:
+                                #     order['created_at'] = orderitem['created_at']
+                                #     issue_type = 'nammb2b_custom_notredeemed'
+                                #     customorderrecord(order, dollars, purchase_type, issue_type)
+
+                                order['created_at'] = orderitem['created_at']
+                                issue_type = 'nammb2b_custom'
+                                customorderrecord(order, dollars, purchase_type, issue_type)
+                                buildcustomdata(order, product_catalog, dollars, conn1)
+
+                                # ENd of Testing block
 
                             else:
                                 issue_type = 'nammb2b_'
