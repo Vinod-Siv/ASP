@@ -15,7 +15,6 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    
     return conn, conn1, conn2
 
 
@@ -164,7 +163,7 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-11-01' AND '2018-11-03' 
+                    AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2018-12-20' 
                     # AND o.entity_id = 1253523
                     # AND o.state = 'complete' AND status = 'complete'
                     """
@@ -603,7 +602,7 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
                         discount_amount * -1, base_discount_amount * -1, special_price * -1, base_special_price * -1, 
                         owner_discount_amount * -1, base_owner_discount_amount * -1, special_owner_discount_price * -1, 
                         base_special_owner_discount_price * -1, voucher_amount *-1, base_voucher_amount *-1,
-                        order_currency_code
+                        order_currency_code, custom_history_id, custom_id, hw_serialnumber, invoice_date
                         FROM public.royalty
                         WHERE voucher_serial = %s 
 --                        AND item_type = 'custom'
@@ -822,7 +821,8 @@ def getinvoiceitemdetails(order_id, item_id):
                       join uaudio.sales_flat_invoice_item b ON a.entity_id = b.parent_id where a.order_id = %s) voucher_amount,
                     ((it.base_price_incl_tax - coalesce(it.base_tax_amount, 0)) * coalesce(i.base_customer_balance_amount, 0)) / (
                       select sum(base_price_incl_tax) - coalesce(sum(b.base_tax_amount), 0) total from uaudio.sales_flat_invoice a
-                      join uaudio.sales_flat_invoice_item b ON a.entity_id = b.parent_id where a.order_id = %s) base_voucher_amount
+                      join uaudio.sales_flat_invoice_item b ON a.entity_id = b.parent_id where a.order_id = %s) base_voucher_amount,
+                      NULL as hw_serialnum, NULL as invoice_date
                     from uaudio.sales_flat_order o
                     join uaudio.sales_flat_order_item ot on o.entity_id = ot.order_id
                     join uaudio.sales_flat_invoice i on o.entity_id = i.order_id
@@ -831,6 +831,7 @@ def getinvoiceitemdetails(order_id, item_id):
         """
         cursor.execute(sql, (order_id, order_id, order_id, item_id,))
         dollarvalues = cursor.fetchall()
+        print(dollarvalues)
         return dollarvalues
 
 
@@ -1150,6 +1151,6 @@ if __name__ == '__main__':
     product_catalog = catalogproducts()
     # processcredits()
     # customswap()
-    # vouchers = getorders()
-    # processorders(vouchers, conn1, SkuMap, product_catalog)
-    getchannelorders(product_catalog, SkuMap)
+    vouchers = getorders()
+    processorders(vouchers, conn1, SkuMap, product_catalog)
+    # getchannelorders(product_catalog, SkuMap)
