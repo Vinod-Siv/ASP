@@ -15,7 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-   
+    
     return conn, conn1, conn2
 
 
@@ -345,6 +345,7 @@ def customorderrecord(order, dollars, purchase_type, issue_type):
         data['special_owner_discount_price'] = data['base_special_owner_discount_price'] = \
         data['custom_history_id'] = data['custom_id'] = data['item_id'] = None
     data['hw_serialnumber'] = dollars[0]['hw_serialnum'] if dollars[0]['hw_serialnum'] is not None else None
+    data['invoice_date'] = dollars[0]['invoice_date'] if dollars[0]['invoice_date'] is not None else None
 
     insertdata(data)
 
@@ -473,6 +474,8 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                     data['custom_serial'] = data['custom_history_id'] = data['custom_id'] = None
                     data['hw_serialnumber'] = dollars[0]['hw_serialnum'] if dollars[0][
                                                                                 'hw_serialnum'] is not None else None
+                    data['invoice_date'] = dollars[0]['invoice_date'] if dollars[0][
+                                                                             'invoice_date'] is not None else None
 
                     insertdata(data)
                     # print(data)
@@ -543,6 +546,7 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                     'base_special_owner_discount_price'] = \
                     data['custom_history_id'] = data['custom_id'] = None
                 data['hw_serialnumber'] = dollars[0]['hw_serialnum'] if dollars[0]['hw_serialnum'] is not None else None
+                data['invoice_date'] = dollars[0]['invoice_date'] if dollars[0]['invoice_date'] is not None else None
 
                 insertdata(data)
 
@@ -556,9 +560,9 @@ def insertdata(data):
                                                 special_price, base_special_price, owner_discount_amount, 
                                                 base_owner_discount_amount, special_owner_discount_price, 
                                                 base_special_owner_discount_price, voucher_amount, base_voucher_amount,
-                                                order_currency_code, custom_history_id, custom_id, hw_serialnumber) 
+                                                order_currency_code, custom_history_id, custom_id, hw_serialnumber, invoice_date) 
                                                 values (%s, %s, %s,%s, %s, %s,%s, %s, %s,%s, %s, %s, %s, %s, %s,%s, %s, 
-                                                %s,%s, %s, %s, %s, %s ,%s, %s,%s, %s, %s,%s, %s, %s, %s, %s)"""
+                                                %s,%s, %s, %s, %s, %s ,%s, %s,%s, %s, %s,%s, %s, %s, %s, %s, %s)"""
     try:
         cur.execute(insert_quey,
                     (data['purchase_type'], data['item_type'], data['order_id'], data['order_increment_id'],
@@ -571,8 +575,7 @@ def insertdata(data):
                      data['base_owner_discount_amount'], data['special_owner_discount_price'],
                      data['base_special_owner_discount_price'], data['voucher_amount'],
                      data['base_voucher_amount'], data['order_currency_code'], data['custom_history_id'],
-                     data['custom_id'],
-                     data['hw_serialnumber'],))
+                     data['custom_id'], data['hw_serialnumber'], data['invoice_date']))
         conn1.commit()
     except psycopg2.Error as e:
         print("Error : ", e)
@@ -714,6 +717,7 @@ def insertcustomdata(order, dollars, custrec, purchase_type, item_type):
                 data['base_special_owner_discount_price'] = None
 
             data['hw_serialnumber'] = dollars[0]['hw_serialnum'] if dollars[0]['hw_serialnum'] is not None else None
+            data['invoice_date'] = dollars[0]['invoice_date'] if dollars[0]['invoice_date'] is not None else None
 
             insertdata(data)
 
@@ -870,11 +874,12 @@ def isBundle(sku):
 
 def getchannelorders(product_catalog, SkuMap):
     with conn.cursor() as cursor:
-        sql = """select * from uaudio.vouchers v 
+        sql = """select *, nb.id AS namm_id from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
+                 left outer join uaudio.nammb2b nb on v.vouchers_purchase_ordernum = nb.po_number
                  WHERE v.voucher_type = 'nammb2b' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 v.vouchers_serial = '0EAR-EH62-NRKH-LAH0' AND
+                 # v.vouchers_serial = '0EAR-EH62-NRKH-LAH0' AND
                  v.vouchers_created BETWEEN '2018-10-01' AND '2018-12-19' 
                  order by v.vouchers_serial      
         """
@@ -1083,11 +1088,12 @@ def getchannelorders(product_catalog, SkuMap):
                     print(order)
                     print(orderitem)
                     with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
-                        sql = """ select * from rpt.salesmargindetail sm join erp.orderdtl od
+                        sql = """ select *, ih.invoicedate from rpt.salesmargindetail sm join erp.orderdtl od
                                     ON sm.ordernum = od.ordernum AND sm.orderline = od.orderline
-                                    where od.poline = %s
+                                    JOIN erp.invchead ih ON sm.ordernum = ih.ordernum
+                                    where od.reference = %s
                                 """
-                        cursor.execute(sql, (order['vouchers_purchase_ordernum'],))
+                        cursor.execute(sql, (order['namm_id'],))
                         nammrec = cursor.fetchone()
 
                         if nammrec:
@@ -1102,26 +1108,20 @@ def getchannelorders(product_catalog, SkuMap):
                                 dollar['base_voucher_amount'] = 0
                             dollar['order_currency_code'] = nammrec['currencycode']
                             dollar['hw_serialnum'] = None
+                            dollar['invoice_date'] = nammrec['invoicedate']
                             dollars.append(dollar)
                             purchase_type = 'channel'
+
+                            order['entity_id'] = orderitem['orderid']= nammrec['ordernum']
+                            order['increment_id'] = orderitem['order_increment_id'] = order['namm_id']
+                            order['item_id'] = orderitem['item_id']= nammrec['orderline']
+
                             if not orderitem['ASPSkus']:
                                 issue_type = 'nammb2b'
                                 custom_rec = getcustomrecord(order['vouchers_serial'])
                                 custom_redeem = iscustomredeemed(custom_rec[0]['id']) if custom_rec else 0
-                                order['entity_id'] = order['vouchers_purchase_ordernum']
-                                order['increment_id'] = order['item_id'] = None
                                 order['sku'] = order['skus_id']
                                 order['customer_id'] = order['customers_id']
-
-                                # Testing
-
-                                # if custom_rec and custom_redeem:
-                                #     item_type = 'nammb2b_custom'
-                                #     insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
-                                # else:
-                                #     order['created_at'] = orderitem['created_at']
-                                #     issue_type = 'nammb2b_custom_notredeemed'
-                                #     customorderrecord(order, dollars, purchase_type, issue_type)
 
                                 order['created_at'] = orderitem['created_at']
                                 issue_type = 'nammb2b_custom'
@@ -1153,4 +1153,3 @@ if __name__ == '__main__':
     # vouchers = getorders()
     # processorders(vouchers, conn1, SkuMap, product_catalog)
     getchannelorders(product_catalog, SkuMap)
-
