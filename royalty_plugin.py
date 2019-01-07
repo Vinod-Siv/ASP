@@ -15,7 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    
+
     return conn, conn1, conn2
 
 
@@ -42,9 +42,7 @@ def buildskumap():
                  AND s.skus_status='Active'
                  AND s.skus_product_type='plugin'
                  AND s.skus_bundle=0
-                 -- Testing
                  AND c.visibility != 1
-                 --
                  GROUP BY sp.skus_id"""
         cursor.execute(sql)
         sku = cursor.fetchall()
@@ -59,6 +57,7 @@ def buildskumap():
         newskumap = dict()
         for ar in skumap:
             newskumap[revskumap[ar]] = ar
+        print(newskumap)
         return newskumap
 
 
@@ -170,12 +169,13 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
-                    AND o.entity_id = 1297948
+                    # AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
+                    AND o.entity_id = 1247285
                     AND o.state IN ('complete', 'closed')
                     """
         cursor.execute(sql)
         result = cursor.fetchall()
+        print(result)
         return result
 
 
@@ -627,7 +627,7 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
                         FROM public.royalty
                         WHERE voucher_serial = %s 
 --                        AND item_type = 'custom'
-                        AND item_type IN ('custom', 'nammb2b_custom')
+                        AND item_type IN ('custom', 'hw/sw_custom', 'nammb2b_custom')
                     """
             cursor1.execute(sql, (order['vouchers_serial'],))
             record = list(cursor1.fetchone())
@@ -769,6 +769,7 @@ def ownedproducts(orderitem):
     # ownedsks = getskusforprodcodes(vouc,buildskumap())
     # owned_productskus = ownedsks['ASPSkus']
     # owned_product = {'owned_productcodes': owned_productcodes, 'owned_productskus': owned_productskus }
+    print('owned_productcodes', owned_productcodes)
     return owned_productcodes
 
 
@@ -901,9 +902,9 @@ def getchannelorders(product_catalog, SkuMap):
         sql = """select *, nb.id AS namm_id from uaudio.vouchers v 
                  # join uaudio.vouchers_products vp on v.vouchers_serial = vp.vouchers_serial
                  left outer join uaudio.nammb2b nb on v.vouchers_purchase_ordernum = nb.po_number
-                 WHERE v.voucher_type = 'nammb2b' AND
+                 WHERE v.voucher_type = 'registration' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 # v.vouchers_serial = '0EAR-EH62-NRKH-LAH0' AND
+                 v.vouchers_serial = '3XWX-VX88-8KE6-13E0' AND
                  v.vouchers_created BETWEEN '2018-10-01' AND '2018-12-19' 
                  order by v.vouchers_serial      
         """
@@ -974,7 +975,7 @@ def getchannelorders(product_catalog, SkuMap):
                 voucher = getproductcodes(order['vouchers_serial'], order['voucher_type'],
                                           order['vouchers_purchase_ordernum'],
                                           order['skus_id'], None, order['customers_id'], order['vouchers_created'],
-                                          None, None)
+                                          None, None, None, None)
 
                 orderitem = getskusforprodcodes(voucher, SkuMap)
                 # print(orderitem)
@@ -1010,9 +1011,10 @@ def getchannelorders(product_catalog, SkuMap):
 
                         with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
                             sql = """ select sm.custid, sm.groupcode, sm.partnum, usdprice, localprice, coalesce(nullif(usdtaxamt,0)/quantity,0) as usdtaxamt, 
-                                        coalesce(nullif(localtaxamt,0)/quantity,0) as localtaxamt, sm.currencycode, sm.ordernum,sm.orderline
+                                        coalesce(nullif(localtaxamt,0)/quantity,0) as localtaxamt, sm.currencycode, sm.ordernum,sm.orderline, ih.invoicedate
                                         from rpt.salesmargindetail sm join rpt.serialnumberhistory sn
                                         ON sn.ordernum = sm.ordernum AND sn.orderline = sm.orderline
+                                        LEFT JOIN erp.invchead ih ON sm.ordernum = ih.ordernum
                                       where sn.serialnumber = %s
                                       AND sm.shipstatus IN ('Shipped','Invoiced')  
                                       AND sn.shipped = 1
@@ -1062,6 +1064,7 @@ def getchannelorders(product_catalog, SkuMap):
                                     dollar['tax_amount'] = customorder['localtaxamt']
                                     dollar['base_tax_amount'] = customorder['localtaxamt']
                                     dollar['order_currency_code'] = customorder['currencycode']
+                                    dollar['invoice_date'] = customorder['invoicedate']
 
                                     print(customorder)
                                     print('dollar', dollar)
@@ -1078,22 +1081,36 @@ def getchannelorders(product_catalog, SkuMap):
                         order['increment_id'] = None
                         order['sku'] = order['skus_id']
                         order['customer_id'] = order['customers_id']
+                        order['created_at'] = orderitem['created_at']
 
+                        #
                         if custom_rec and custom_redeem:
                             if dollar['base_price_incl_tax'] is None: dollar['base_price_incl_tax'] = custom_rec[0][
                                 'asp']
                             if dollar['price_incl_tax'] is None: dollar['price_incl_tax'] = custom_rec[0]['asp'] * (
                                 ex_rate if ex_rate is not None else 1)
-
-                            print("dollar['base_price_incl_tax'] :", dollar['base_price_incl_tax'])
-                            print("dollar['price_incl_tax'] :", dollar['price_incl_tax'])
-
-                            item_type = 'hw/sw_custom'
-                            insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
+                            issue_type = 'hw/sw_custom'
+                            customorderrecord(order, dollars, purchase_type, issue_type)
+                            buildcustomdata(order, product_catalog, dollars, conn1)
                         else:
-                            order['created_at'] = orderitem['created_at']
                             issue_type = 'hw/sw_custom_notredeemed'
                             customorderrecord(order, dollars, purchase_type, issue_type)
+                        #
+
+                        # if custom_rec and custom_redeem:
+                        #     if dollar['base_price_incl_tax'] is None: dollar['base_price_incl_tax'] = custom_rec[0]['asp']
+                        #     if dollar['price_incl_tax'] is None: dollar['price_incl_tax'] = custom_rec[0]['asp'] * (ex_rate if ex_rate is not None else 1)
+                        #
+                        #     print("dollar['base_price_incl_tax'] :", dollar['base_price_incl_tax'] )
+                        #     print("dollar['price_incl_tax'] :", dollar['price_incl_tax'])
+                        #
+                        #
+                        #     item_type = 'hw/sw_custom'
+                        #     insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
+                        # else:
+                        #     order['created_at'] = orderitem['created_at']
+                        #     issue_type = 'hw/sw_custom_notredeemed'
+                        #     customorderrecord(order, dollars, purchase_type, issue_type)
                     else:
                         if orderitem['ordersku'].find('ULTIMATE') != -1:
                             issue_type = 'hw/sw_ultimate'
@@ -1155,6 +1172,8 @@ def getchannelorders(product_catalog, SkuMap):
                                 issue_type = 'nammb2b_'
                                 builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
 
+    nammb2b_credits()
+
 
 '''
                 else:
@@ -1165,12 +1184,47 @@ def getchannelorders(product_catalog, SkuMap):
                 # print(order)
 '''
 
+
+def nammb2b_credits():
+    with conn1.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+        sql = """ select distinct order_increment_id as id from royalty where item_type like 'namm%' 
+                AND item_type != 'nammb2b-credit'
+             """
+        cursor.execute(sql, )
+        namm_orders = cursor.fetchall()
+        print(namm_orders)
+
+    with conn.cursor() as cursor:
+        sql = "select distinct id from uaudio.nammb2b where state = -1"
+        cursor.execute(sql, )
+        credit_orders = cursor.fetchall()
+        credit_orders = [x['id'] for x in credit_orders]
+
+    for x in namm_orders:
+        if x['id'] in credit_orders:
+            print(x['id'])
+            with conn1.cursor() as cursor:
+                sql = """INSERT INTO public.royalty (select purchase_type, 'nammb2b-credit', order_id,order_increment_id, item_id,
+                         customer_id, order_sku, voucher_serial, custom_serial, sku, created_at, list_price, pro_rata, 
+                         net_price * -1, base_net_price * -1, price_incl_tax * -1, base_price_incl_tax * -1, 
+                         tax_amount * -1, base_tax_amount * -1, discount_amount * -1, base_discount_amount * -1, 
+                         special_price * -1, base_special_price * -1, owner_discount_amount * -1, 
+                         base_owner_discount_amount * -1, special_owner_discount_price * -1 , base_special_owner_discount_price * -1,
+                         voucher_amount * -1, base_voucher_amount * -1, order_currency_code, custom_history_id,
+                         custom_id, hw_serialnumber, invoice_date from public.royalty r
+                        where r.order_increment_id = %s
+                        --AND r.item_type != 'nammb2b_custom'
+                        )"""
+                cursor.execute(sql, (x['id'],))
+                conn1.commit()
+
+
 if __name__ == '__main__':
     conn, conn1, conn2 = dbconnection()
     SkuMap = buildskumap()
     product_catalog = catalogproducts()
     # processcredits()
     # customswap()
-    vouchers = getorders()
-    processorders(vouchers, conn1, SkuMap, product_catalog)
-    # getchannelorders(product_catalog, SkuMap)
+    # vouchers = getorders()
+    # processorders(vouchers, conn1, SkuMap, product_catalog)
+    getchannelorders(product_catalog, SkuMap)
