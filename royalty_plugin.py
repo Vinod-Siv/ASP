@@ -15,7 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-
+    
     return conn, conn1, conn2
 
 
@@ -162,7 +162,8 @@ def getorders():
 
     with conn.cursor() as cursor:
         sql = """select distinct v.vouchers_serial, v.voucher_type, o.entity_id, i.sku, i.item_id, o.customer_id, 
-                                i.created_at, i.additional_data, o.increment_id, o.state, o.status
+                                i.created_at, i.additional_data, o.increment_id, o.state, o.status, 
+                                o.customers_products_hw_groups_id
                     from uaudio.vouchers v 
                     JOIN uaudio.sales_flat_order o 
                     ON v.vouchers_purchase_ordernum = o.entity_id
@@ -170,7 +171,7 @@ def getorders():
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
-                    AND o.entity_id = 1247285
+                    AND o.entity_id = 1267002
                     AND o.state IN ('complete', 'closed')
                     """
         cursor.execute(sql)
@@ -194,7 +195,8 @@ def processorders(vouchers, conn1, SkuMap, product_catalog):
             else:
                 vouc = getproductcodes(order['vouchers_serial'], order['voucher_type'], order['entity_id'],
                                        order['sku'], order['item_id'], order['customer_id'], order['created_at'],
-                                       order['additional_data'], order['increment_id'], order['state'], order['status'])
+                                       order['additional_data'], order['increment_id'], order['state'], order['status'],
+                                       order['customers_products_hw_groups_id'])
                 orderitem = getskusforprodcodes(vouc, SkuMap)
                 print('orderitem', orderitem)
                 issue_type = 'purchase_'
@@ -206,7 +208,7 @@ def processorders(vouchers, conn1, SkuMap, product_catalog):
 
 
 def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customerid, createdat, additional_data,
-                    increment_id, state, status):
+                    increment_id, state, status, hw_group_id):
     '''
     Using voucher serial, list of product codes associated is retrieved
     :param vouchers:
@@ -253,6 +255,7 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
         vouc['prodcodes'] = products
         vouc['state'] = state
         vouc['status'] = status
+        vouc['hw_group_id'] = hw_group_id
         # print(additional_data)
         if additional_data is not None:
             vouc['discount_type'] = (json.loads(additional_data)).get("discount_type", 'None')
@@ -305,6 +308,7 @@ def getskusforprodcodes(vouc, SkuMap):
             # if len(prodcodes) >0:
             #     print("**** Diff prod codes")
             #     print(prodcodes)
+    vouc['remaining_prodcodes'] = prodcodes
     vouc['skuprods'] = skuprods
     vouc['ASPSkus'] = ChildSkus
     return vouc
@@ -391,11 +395,13 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
             item_type = 'standalone'
 
     print('item_type', item_type)
+    print("orderitem['skuprods']", orderitem['skuprods'])
 
     for skus, prod in orderitem['skuprods'].items():
         prod = [int(x) for x in prod]
-
+        # Testing
         if orderitem['discount_type'] == 'bundle_discount':
+            # if item_type == 'ultimate-upgrade':
             if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
                 continue
             else:
@@ -757,8 +763,10 @@ def ownedproducts(orderitem):
                  where customers_id = %s 
                  AND vouchers_serial != %s
                  AND customers_products_sw_created < %s
+                 AND customers_products_hw_groups_id = %s
                  """
-        cursor.execute(sql, (orderitem['customer_id'], orderitem['voucherserial'], orderitem['created_at'],))
+        cursor.execute(sql, (
+        orderitem['customer_id'], orderitem['voucherserial'], orderitem['created_at'], orderitem['hw_group_id']))
         owned_products = cursor.fetchall()
     owned_productcodes = []
     for prodcodes in owned_products:
@@ -1225,6 +1233,6 @@ if __name__ == '__main__':
     product_catalog = catalogproducts()
     # processcredits()
     # customswap()
-    # vouchers = getorders()
-    # processorders(vouchers, conn1, SkuMap, product_catalog)
-    getchannelorders(product_catalog, SkuMap)
+    vouchers = getorders()
+    processorders(vouchers, conn1, SkuMap, product_catalog)
+    # getchannelorders(product_catalog, SkuMap)
