@@ -170,8 +170,8 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
-                    AND o.entity_id = 1256794
+                    # AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
+                    AND o.entity_id = 1259921
                     AND o.state IN ('complete', 'closed')
                     """
         cursor.execute(sql)
@@ -304,6 +304,14 @@ def getskusforprodcodes(vouc, SkuMap):
             # print(prodcodes)
             # print(np.setdiff1d(prodcodes,prod))
             prodcodes = np.setdiff1d(prodcodes, prod)
+    if len(prodcodes) >0:
+        for prod in prodcodes:
+            for sku,products in SkuMap.items():
+                products = products.split(',')
+                for prodc in products:
+                    if prodc == prod:
+                        skuprods[sku] = prodc
+                        print(skuprods)
 
             # if len(prodcodes) >0:
             #     print("**** Diff prod codes")
