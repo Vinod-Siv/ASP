@@ -15,7 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    
+
     return conn, conn1, conn2
 
 
@@ -170,13 +170,13 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    # AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
-                    AND o.entity_id = 1267002
+                    AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
+                    AND o.entity_id = 1256794
                     AND o.state IN ('complete', 'closed')
                     """
         cursor.execute(sql)
         result = cursor.fetchall()
-        print(result)
+        # print(result)
         return result
 
 
@@ -387,6 +387,8 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
             item_type = 'ultimate'
             if orderitem['discount_type'] == 'bundle_discount':
                 item_type = 'ultimate-upgrade'
+            elif orderitem['discount_type'] == 'complete_your_ultimate':
+                item_type = 'complete_ur_ultimate'
         elif isBundle(orderitem['ordersku']) == 1:
             item_type = 'bundle'
             if orderitem['discount_type'] == 'bundle_discount':
@@ -394,13 +396,13 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
         else:
             item_type = 'standalone'
 
-    print('item_type', item_type)
-    print("orderitem['skuprods']", orderitem['skuprods'])
+    # print('item_type', item_type)
+    # print("orderitem['skuprods']", orderitem['skuprods'])
 
     for skus, prod in orderitem['skuprods'].items():
         prod = [int(x) for x in prod]
         # Testing
-        if orderitem['discount_type'] == 'bundle_discount':
+        if orderitem['discount_type'] == 'bundle_discount' or orderitem['discount_type'] == 'complete_your_ultimate':
             # if item_type == 'ultimate-upgrade':
             if len(list(set(prod).intersection(owned_productcodes))) == len(prod):
                 continue
@@ -615,8 +617,8 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
     """
     issue_type = 'purchase'
     custom_rec = getcustomrecord(order['vouchers_serial'])
-    print(custom_rec)
-    print('vouc', order['vouchers_serial'])
+    # print(custom_rec)
+    # print('vouc', order['vouchers_serial'])
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
     for custrec in custom_rec:
@@ -640,7 +642,7 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
             # Update when the table structure changes
             record[10] = custrec['redeem_date']
 
-            print('record', record)
+            # print('record', record)
 
             sql = """ INSERT INTO public.royalty values %s;"""
             cursor1.execute(sql, (tuple(record),))
@@ -777,7 +779,7 @@ def ownedproducts(orderitem):
     # ownedsks = getskusforprodcodes(vouc,buildskumap())
     # owned_productskus = ownedsks['ASPSkus']
     # owned_product = {'owned_productcodes': owned_productcodes, 'owned_productskus': owned_productskus }
-    print('owned_productcodes', owned_productcodes)
+    # print('owned_productcodes', owned_productcodes)
     return owned_productcodes
 
 
@@ -863,7 +865,7 @@ def getinvoiceitemdetails(order_id, item_id):
         """
         cursor.execute(sql, (order_id, order_id, order_id, item_id,))
         dollarvalues = cursor.fetchall()
-        print(dollarvalues)
+        # print(dollarvalues)
         return dollarvalues
 
 
@@ -920,7 +922,7 @@ def getchannelorders(product_catalog, SkuMap):
         promoorders = cursor.fetchall()
 
         for order in promoorders:
-            print(order['vouchers_serial'])
+            # print(order['vouchers_serial'])
             if order['voucher_type'] == 'promo':
                 if order['skus_id'] == 'UAD-CUSTOM-N':
                     with conn.cursor() as cursor:
@@ -1231,8 +1233,8 @@ if __name__ == '__main__':
     conn, conn1, conn2 = dbconnection()
     SkuMap = buildskumap()
     product_catalog = catalogproducts()
-    # processcredits()
     # customswap()
     vouchers = getorders()
     processorders(vouchers, conn1, SkuMap, product_catalog)
+    # processcredits()
     # getchannelorders(product_catalog, SkuMap)
