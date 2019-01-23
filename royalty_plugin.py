@@ -15,7 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-
+   
     return conn, conn1, conn2
 
 
@@ -74,13 +74,10 @@ def processcredits():
         with conn.cursor() as cursor:
             sql = "select distinct order_id,  created_at from uaudio.sales_flat_creditmemo where order_id in " + str(
                 orders)
-            # print(sql)
             cursor.execute(sql)
             orders = cursor.fetchall()
-            # print(orders)
 
         for order in orders:
-            # print(order)
             with conn1.cursor() as cursor:
                 sql = """insert into public.royalty (select purchase_type, 'purchase-credit', order_id,order_increment_id, item_id,
                          customer_id, order_sku, voucher_serial, custom_serial, sku,%s, list_price, pro_rata, 
@@ -172,11 +169,12 @@ def getorders():
                     where v.voucher_type = 'purchase' 
                     # AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
                     AND o.entity_id = 1259921
+                    # AND vouchers_purchase_date = '2018-01-09' 
+                    AND o.entity_id IN (1074425, 1075953,1043415, 1043968, 1043982)
                     AND o.state IN ('complete', 'closed')
                     """
         cursor.execute(sql)
         result = cursor.fetchall()
-        # print(result)
         return result
 
 
@@ -198,7 +196,6 @@ def processorders(vouchers, conn1, SkuMap, product_catalog):
                                        order['additional_data'], order['increment_id'], order['state'], order['status'],
                                        order['customers_products_hw_groups_id'])
                 orderitem = getskusforprodcodes(vouc, SkuMap)
-                print('orderitem', orderitem)
                 issue_type = 'purchase_'
                 builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
         else:
@@ -256,7 +253,6 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
         vouc['state'] = state
         vouc['status'] = status
         vouc['hw_group_id'] = hw_group_id
-        # print(additional_data)
         if additional_data is not None:
             vouc['discount_type'] = (json.loads(additional_data)).get("discount_type", 'None')
         else:
@@ -264,7 +260,6 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
         vouc['order_increment_id'] = increment_id
 
         # vouc['discount_type'] = ((json.loads(additional_data)).get("discount_type", 'None')) if not None else 'None'
-        # print(vouc['discount_type'])
     return vouc
 
 
@@ -287,13 +282,11 @@ def getskusforprodcodes(vouc, SkuMap):
     for prodcode in vouc['prodcodes']:
         prodcodes.append(prodcode[-5:])
 
-    # print(SkuMap)
     skuprods = dict()
     ChildSkus = []
     for sku, prod in SkuMap.items():
         prod = prod.split(',')
         if len(list(set(prod).intersection(prodcodes))) == len(prod):
-            # print(ChildSkus)
             ChildSkus.append(sku)
             # TEST
             # for products in prod:
@@ -301,21 +294,16 @@ def getskusforprodcodes(vouc, SkuMap):
             skuprods[sku] = prod
 
             # END TEST
-            # print(prodcodes)
-            # print(np.setdiff1d(prodcodes,prod))
             prodcodes = np.setdiff1d(prodcodes, prod)
-    if len(prodcodes) >0:
+    if len(prodcodes) > 0:
         for prod in prodcodes:
-            for sku,products in SkuMap.items():
+            for sku, products in SkuMap.items():
                 products = products.split(',')
                 for prodc in products:
                     if prodc == prod:
                         skuprods[sku] = prodc
                         print(skuprods)
 
-            # if len(prodcodes) >0:
-            #     print("**** Diff prod codes")
-            #     print(prodcodes)
     vouc['remaining_prodcodes'] = prodcodes
     vouc['skuprods'] = skuprods
     vouc['ASPSkus'] = ChildSkus
@@ -403,9 +391,6 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                 item_type = 'bundle_upgrade'
         else:
             item_type = 'standalone'
-
-    # print('item_type', item_type)
-    # print("orderitem['skuprods']", orderitem['skuprods'])
 
     for skus, prod in orderitem['skuprods'].items():
         prod = [int(x) for x in prod]
@@ -534,7 +519,8 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                 # else:
                 #     data['status'] = 'issued'
                 data['sku'] = skus
-                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(orderitem['created_at'])
+                data['created_at'] = '{:%Y-%m-%d %H:%M:%S}'.format(orderitem['created_at']) if orderitem[
+                                                                                                   'created_at'] is not None else None
 
                 # List Price
                 # For every SKU, if the customer already owns the products (in owner sku) from catalog products.
@@ -625,8 +611,6 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
     """
     issue_type = 'purchase'
     custom_rec = getcustomrecord(order['vouchers_serial'])
-    # print(custom_rec)
-    # print('vouc', order['vouchers_serial'])
     # REPLACE(sp.skus_id, IF(sp.skus_id LIKE 'UAD-2%', 'UAD-2','UAD-1'), 'UAD') AS sku_id,
 
     for custrec in custom_rec:
@@ -649,8 +633,6 @@ def buildcustomdata(order, product_catalog, dollars, conn1):
             record = list(cursor1.fetchone())
             # Update when the table structure changes
             record[10] = custrec['redeem_date']
-
-            # print('record', record)
 
             sql = """ INSERT INTO public.royalty values %s;"""
             cursor1.execute(sql, (tuple(record),))
@@ -776,18 +758,12 @@ def ownedproducts(orderitem):
                  AND customers_products_hw_groups_id = %s
                  """
         cursor.execute(sql, (
-        orderitem['customer_id'], orderitem['voucherserial'], orderitem['created_at'], orderitem['hw_group_id']))
+            orderitem['customer_id'], orderitem['voucherserial'], orderitem['created_at'], orderitem['hw_group_id']))
         owned_products = cursor.fetchall()
     owned_productcodes = []
     for prodcodes in owned_products:
         owned_productcodes.append(prodcodes['products_code'])
 
-    ## Testing .... Match royalty SKUS for the products owned
-    # vouc ={'prodcodes': owned_productcodes}
-    # ownedsks = getskusforprodcodes(vouc,buildskumap())
-    # owned_productskus = ownedsks['ASPSkus']
-    # owned_product = {'owned_productcodes': owned_productcodes, 'owned_productskus': owned_productskus }
-    # print('owned_productcodes', owned_productcodes)
     return owned_productcodes
 
 
@@ -807,13 +783,23 @@ def catalogproducts():
                   ,special_price
                   ,special_to_date
                 from uaudio.catalog_product_flat_1
+
+                UNION 
+
+                select 
+                'UAD-DISTORTION-ESSENTIALS' AS sku,
+                   NULL as owner_discount, 
+                   NULL AS owner_sku
+                  ,249 as price
+                  ,NULL as special_from_date
+                  ,null as special_owner_discount
+                  ,null as special_price
+                  ,null as special_to_date
         """
         cursor.execute(sql)
         result = cursor.fetchall()
     df = pd.DataFrame(data=result)
     product_catalog = df.set_index('sku')
-    # print('\n Product Catalog :')
-    # print(product_catalog)
     return product_catalog
 
 
@@ -873,7 +859,6 @@ def getinvoiceitemdetails(order_id, item_id):
         """
         cursor.execute(sql, (order_id, order_id, order_id, item_id,))
         dollarvalues = cursor.fetchall()
-        # print(dollarvalues)
         return dollarvalues
 
 
@@ -922,15 +907,14 @@ def getchannelorders(product_catalog, SkuMap):
                  left outer join uaudio.nammb2b nb on v.vouchers_purchase_ordernum = nb.po_number
                  WHERE v.voucher_type = 'registration' AND
                  # WHERE v.voucher_type != 'purchase' AND
-                 v.vouchers_serial = '3XWX-VX88-8KE6-13E0' AND
-                 v.vouchers_created BETWEEN '2018-10-01' AND '2018-12-19' 
+                 # v.vouchers_serial = '3XWX-VX88-8KE6-13E0' AND
+                 v.vouchers_created BETWEEN '2018-10-01' AND '2018-12-31' 
                  order by v.vouchers_serial      
         """
         cursor.execute(sql)
         promoorders = cursor.fetchall()
 
         for order in promoorders:
-            # print(order['vouchers_serial'])
             if order['voucher_type'] == 'promo':
                 if order['skus_id'] == 'UAD-CUSTOM-N':
                     with conn.cursor() as cursor:
@@ -965,7 +949,6 @@ def getchannelorders(product_catalog, SkuMap):
                                                       data['voucher_serial'], data['custom_serial'],
                                                       data['sku'], data['created_at'], data['list_price'],))
                             conn1.commit()
-                            # print(data)
 
                 else:
                     data = dict()
@@ -988,15 +971,13 @@ def getchannelorders(product_catalog, SkuMap):
                                               data['voucher_serial'], data['sku'], data['created_at'],
                                               data['list_price'],))
                     conn1.commit()
-                    # print(data)
             elif order['voucher_type'] == 'registration' or order['voucher_type'] == 'nammb2b':
                 voucher = getproductcodes(order['vouchers_serial'], order['voucher_type'],
                                           order['vouchers_purchase_ordernum'],
                                           order['skus_id'], None, order['customers_id'], order['vouchers_created'],
-                                          None, None, None, None)
+                                          None, None, None, None, None)
 
                 orderitem = getskusforprodcodes(voucher, SkuMap)
-                # print(orderitem)
 
                 if order['voucher_type'] == 'registration':
                     with conn.cursor() as cursor:
@@ -1011,12 +992,10 @@ def getchannelorders(product_catalog, SkuMap):
                     dollar['discount_amount'] = dollar['base_discount_amount'] = dollar['voucher_amount'] = \
                         dollar['base_voucher_amount'] = dollar['price_incl_tax'] = dollar['base_price_incl_tax'] = \
                         dollar['hw_serialnum'] = dollar['tax_amount'] = dollar['base_tax_amount'] = orderitem['orderid'] \
-                        = orderitem['item_id'] = order['entity_id'] = order['item_id'] = None
+                        = orderitem['item_id'] = order['entity_id'] = order['item_id'] = dollar['invoice_date'] = None
                     dollar['order_currency_code'] = 'USD'
 
                     if serialhist is not None:
-
-                        print(serialhist)
 
                         with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
                             sql = " select ordernum, orderline, trandate from rpt.serialnumberhistory where serialnumber = %s AND shipped =1 "
@@ -1041,6 +1020,7 @@ def getchannelorders(product_catalog, SkuMap):
                             customorder = cursor.fetchone()
 
                             dollar['hw_serialnum'] = serialhist['customers_products_hw_serial']
+                            dollar['invoice_date'] = customorder['invoicedate']
 
                             if customorder:
 
@@ -1084,9 +1064,6 @@ def getchannelorders(product_catalog, SkuMap):
                                     dollar['order_currency_code'] = customorder['currencycode']
                                     dollar['invoice_date'] = customorder['invoicedate']
 
-                                    print(customorder)
-                                    print('dollar', dollar)
-
                     dollars.append(dollar)
 
                     p = re.compile(r'\bCUSTOM*\b', flags=re.I | re.X)
@@ -1113,22 +1090,6 @@ def getchannelorders(product_catalog, SkuMap):
                         else:
                             issue_type = 'hw/sw_custom_notredeemed'
                             customorderrecord(order, dollars, purchase_type, issue_type)
-                        #
-
-                        # if custom_rec and custom_redeem:
-                        #     if dollar['base_price_incl_tax'] is None: dollar['base_price_incl_tax'] = custom_rec[0]['asp']
-                        #     if dollar['price_incl_tax'] is None: dollar['price_incl_tax'] = custom_rec[0]['asp'] * (ex_rate if ex_rate is not None else 1)
-                        #
-                        #     print("dollar['base_price_incl_tax'] :", dollar['base_price_incl_tax'] )
-                        #     print("dollar['price_incl_tax'] :", dollar['price_incl_tax'])
-                        #
-                        #
-                        #     item_type = 'hw/sw_custom'
-                        #     insertcustomdata(order, dollars, custom_rec[0], purchase_type, item_type)
-                        # else:
-                        #     order['created_at'] = orderitem['created_at']
-                        #     issue_type = 'hw/sw_custom_notredeemed'
-                        #     customorderrecord(order, dollars, purchase_type, issue_type)
                     else:
                         if orderitem['ordersku'].find('ULTIMATE') != -1:
                             issue_type = 'hw/sw_ultimate'
@@ -1141,8 +1102,6 @@ def getchannelorders(product_catalog, SkuMap):
                 # Tested part of NAMMB2B
 
                 elif order['voucher_type'] == 'nammb2b':
-                    print(order)
-                    print(orderitem)
                     with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
                         sql = """ select *, ih.invoicedate from rpt.salesmargindetail sm join erp.orderdtl od
                                     ON sm.ordernum = od.ordernum AND sm.orderline = od.orderline
@@ -1153,7 +1112,6 @@ def getchannelorders(product_catalog, SkuMap):
                         nammrec = cursor.fetchone()
 
                         if nammrec:
-                            print(nammrec)
                             dollars = list()
                             dollar = dict()
                             dollar['price_incl_tax'] = nammrec['localprice']
@@ -1220,7 +1178,6 @@ def nammb2b_credits():
 
     for x in namm_orders:
         if x['id'] in credit_orders:
-            print(x['id'])
             with conn1.cursor() as cursor:
                 sql = """INSERT INTO public.royalty (select purchase_type, 'nammb2b-credit', order_id,order_increment_id, item_id,
                          customer_id, order_sku, voucher_serial, custom_serial, sku, created_at, list_price, pro_rata, 
