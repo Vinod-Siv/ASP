@@ -15,7 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-   
+    
     return conn, conn1, conn2
 
 
@@ -167,8 +167,6 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    # AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2019-12-31' 
-                    AND o.entity_id = 1259921
                     # AND vouchers_purchase_date = '2018-01-09' 
                     AND o.entity_id IN (1074425, 1075953,1043415, 1043968, 1043982)
                     AND o.state IN ('complete', 'closed')
@@ -1020,7 +1018,8 @@ def getchannelorders(product_catalog, SkuMap):
                             customorder = cursor.fetchone()
 
                             dollar['hw_serialnum'] = serialhist['customers_products_hw_serial']
-                            dollar['invoice_date'] = customorder['invoicedate']
+                            dollar['invoice_date'] = customorder['invoicedate'] \
+                                if customorder['invoicedate'] is not None else None
 
                             if customorder:
 
