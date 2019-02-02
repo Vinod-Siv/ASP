@@ -15,7 +15,6 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    
     return conn, conn1, conn2
 
 
@@ -159,7 +158,7 @@ def getorders():
 
     with conn.cursor() as cursor:
         sql = """select distinct v.vouchers_serial, v.voucher_type, o.entity_id, i.sku, i.item_id, o.customer_id, 
-                                i.created_at, i.additional_data, o.increment_id, o.state, o.status, 
+                                v.vouchers_created as created_at, i.additional_data, o.increment_id, o.state, o.status, 
                                 o.customers_products_hw_groups_id
                     from uaudio.vouchers v 
                     JOIN uaudio.sales_flat_order o 
@@ -167,9 +166,9 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date = '2018-01-24'
+                    AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2018-12-31'
                     # AND v.vouchers_serial = 'K4DC-XHF9-8DEN-TBH0'
-                    AND o.entity_id = 1143222
+                    # AND o.entity_id = 1143222
                     AND o.state IN ('complete', 'closed')
                     """
         cursor.execute(sql)
@@ -301,7 +300,6 @@ def getskusforprodcodes(vouc, SkuMap):
                 for prodc in products:
                     if prodc == prod:
                         skuprods[sku] = prodc
-                        print(skuprods)
 
     vouc['remaining_prodcodes'] = prodcodes
     vouc['skuprods'] = skuprods
@@ -394,7 +392,6 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
             item_type = 'standalone'
 
 
-    print("owned_productcodes :", owned_productcodes)
 
     for skus, prod in orderitem['skuprods'].items():
         prod = [int(x) for x in prod]
@@ -433,7 +430,6 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                     # For every SKU, if the customer already owns the products (in owner sku) from catalog products.
                     # If yes, considers owner_discount as list price else choose price as list_price
 
-                    if isDiscounted(skus, owned_productcodes) == 1: print("HelloHeyHey")
                     data['discounted_list_price'] = discount_price.at[(skus, dollars[0]['order_currency_code']), 'price'] if isDiscounted(skus, owned_productcodes) == 1 else None
 
 
@@ -502,8 +498,6 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                                                                              'invoice_date'] is not None else None
 
                     insertdata(data)
-                    print(orderitem)
-                    print(data, '\n')
         else:
             try:
                 listprice = product_catalog.at[(skus, dollars[0]['order_currency_code']), 'price']
@@ -578,8 +572,6 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                 data['invoice_date'] = dollars[0]['invoice_date'] if dollars[0]['invoice_date'] is not None else None
 
                 insertdata(data)
-                print(orderitem)
-                print(data, '\n')
 
 
 def insertdata(data):
@@ -928,7 +920,6 @@ def isDiscounted(sku, owned_productcodes):
         ownersku = discount_price.at[(sku, 'USD'), 'owner_sku']
         if ownersku:
             ownersku = list(ownersku.split(','))
-        print(ownersku)
         count = 0
         if ownersku:
             for prodcodes in ownersku:
@@ -969,7 +960,6 @@ def getchannelorders(product_catalog, SkuMap):
                                 """
                         cursor.execute(sql, (order['vouchers_serial'],))
                         customorder = cursor.fetchall()
-                        print(customorder)
 
                         for cust in customorder:
                             data = dict()
