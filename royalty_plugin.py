@@ -62,35 +62,44 @@ def buildskumap():
 
 
 def processcredits():
-    with conn1.cursor() as cursor:
-        sql = """select order_id from (select order_id,item_type  from (select distinct order_id, item_type, 
-                 rank() over(partition by order_id order by item_type desc) as rnk from dev.royalty) where rnk =1)
-                    where item_type != 'purchase-credit' """
+    with conn.cursor() as cursor:
+        sql = """select
+                  i.order_id,
+                  i.item_id,
+                  i.updated_at,
+                  o.state,
+                  o.status
+                from uaudio.sales_flat_order_item i JOIN uaudio.sales_flat_order o ON i.order_id = o.entity_id
+                where i.qty_refunded = 1 and i.updated_at between '2018-01-01' AND '2019-01-01' """
         cursor.execute(sql)
-        result = cursor.fetchall()
-        orders = tuple([x[0] for x in result if x[0] is not None])
+        orders = cursor.fetchall()
+        print(orders)
 
     if len(orders) > 0:
-        with conn.cursor() as cursor:
-            sql = "select distinct order_id,  created_at from uaudio.sales_flat_creditmemo where order_id in " + str(
-                orders)
-            cursor.execute(sql)
-            orders = cursor.fetchall()
-
         for order in orders:
+            print(order)
+            if order['status'] == 'ua_chargeback':
+                record_type = 'Chargeback'
+            elif order['status'] == 'paypal_canceled_reversal':
+                record_type = 'Credit-Paypal'
+            elif order['status'] == 'ua_fraud':
+                record_type = 'UA-Fraud'
+            else:
+                record_type = 'Credit'
+
             with conn1.cursor() as cursor:
-                sql = """insert into dev.royalty (select purchase_type, 'purchase-credit', order_id,order_increment_id, item_id,
+                sql = """insert into dev.royalty (select purchase_type, item_type, order_id,order_increment_id, item_id,
                          customer_id, order_sku, voucher_serial, custom_serial, sku,%s, list_price, discounted_list_price, pro_rata, 
                          net_price * -1, base_net_price * -1, price_incl_tax * -1,
                          base_price_incl_tax * -1, tax_amount * -1, base_tax_amount * -1, discount_amount * -1, 
                          base_discount_amount * -1, 
                          special_price * -1, base_special_price * -1, owner_discount_amount * -1, 
                          base_owner_discount_amount * -1, special_owner_discount_price * -1 , base_special_owner_discount_price * -1,
-                         voucher_amount * -1, base_voucher_amount * -1, order_currency_code, custom_history_id
-                          , custom_id from dev.royalty r
-                        where r.order_id = %s
-                        AND r.item_type != 'custom')"""
-                cursor.execute(sql, (order['created_at'], order['order_id'],))
+                         voucher_amount * -1, base_voucher_amount * -1, order_currency_code, custom_history_id,
+                         custom_id, hw_serialnumber, invoice_date, %s, %s, %s from dev.royalty r
+                        where r.order_id = %s AND r.item_id = %s )"""
+                cursor.execute(sql, (order['updated_at'], order['state'], order['status'], record_type,
+                                     order['order_id'], order['item_id']))
                 conn1.commit()
 
 
@@ -167,9 +176,9 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    # AND vouchers_purchase_date BETWEEN '2018-10-01' AND '2018-12-31'
+                    AND vouchers_purchase_date = current_date 
                     # AND v.vouchers_serial = 'K4DC-XHF9-8DEN-TBH0'
-                    AND o.entity_id = 1256823
+                    # AND o.entity_id  =
                     AND o.state IN ('complete', 'closed')
                     """
         cursor.execute(sql)
@@ -179,6 +188,7 @@ def getorders():
 
 def processorders(vouchers, conn1, SkuMap, product_catalog):
     for order in vouchers:
+        print(order)
         dollars = getinvoiceitemdetails(order['entity_id'], order['item_id'])
 
         if order['voucher_type'] == 'purchase':
@@ -222,7 +232,7 @@ def getproductcodes(vouchers, voucher_type, orderid, ordersku, itemid, customeri
     else:
         sql = """SELECT vp.products_code
                     FROM uaudio.vouchers_products vp 
-                LEFT OUTER JOIN uaudio.customers_products_sw cps 
+                JOIN uaudio.customers_products_sw cps 
                 ON(vp.vouchers_serial = cps.vouchers_serial 
                 AND vp.products_code = cps.products_code) 
                 WHERE vp.vouchers_serial = %s"""
@@ -539,8 +549,11 @@ def builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_t
                 #         prodcode = int(prodcodes[2:])
                 #         if prodcode in owned_productcodes:
                 #             listprice = product_catalog.at[skus, 'owner_discount']
-
-                data['discounted_list_price'] = discount_price.at[(skus, dollars[0]['order_currency_code']), 'price'] if item_type == 'standalone-upgrade' else None
+                try:
+                    data['discounted_list_price'] = discount_price.at[(skus, dollars[0]['order_currency_code']), 'price'] if item_type == 'standalone-upgrade' else None
+                except KeyError:
+                    data['discounted_list_price'] = None
+                # data['discounted_list_price'] = discount_price.at[(skus, dollars[0]['order_currency_code']), 'price'] if item_type == 'standalone-upgrade' else None
                 data['list_price'] = '{0:.2f}'.format(listprice)
                 data['pro_rata'] = '{0:.3f}'.format((listprice / totallistprice) * 100)
                 prorata = float(listprice / totallistprice)
@@ -1070,10 +1083,10 @@ def getchannelorders(product_catalog, SkuMap):
                             customorder = cursor.fetchone()
 
                             dollar['hw_serialnum'] = serialhist['customers_products_hw_serial']
-                            dollar['invoice_date'] = customorder['invoicedate'] \
-                                if customorder['invoicedate'] is not None else None
 
                             if customorder:
+                                dollar['invoice_date'] = customorder['invoicedate'] \
+                                    if customorder['invoicedate'] is not None else None
 
                                 p = re.compile(r'\bCUSTOM*\b |\bULTIMATE[0-9]*\b', flags=re.I | re.X)
                                 m = p.search(orderitem['ordersku'])
@@ -1251,7 +1264,7 @@ if __name__ == '__main__':
     product_catalog = catalogproducts()
     discount_price= discountprice()
     # customswap()
-    vouchers = getorders()
-    processorders(vouchers, conn1, SkuMap, product_catalog)
-    # processcredits()
+    # vouchers = getorders()
+    # processorders(vouchers, conn1, SkuMap, product_catalog)
+    processcredits()
     # getchannelorders(product_catalog, SkuMap)
