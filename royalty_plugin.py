@@ -15,7 +15,6 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
-    
     return conn, conn1, conn2
 
 
@@ -80,10 +79,6 @@ def processcredits():
             print(order)
             if order['status'] == 'ua_chargeback':
                 record_type = 'Chargeback'
-            elif order['status'] == 'paypal_canceled_reversal':
-                record_type = 'Credit-Paypal'
-            elif order['status'] == 'ua_fraud':
-                record_type = 'UA-Fraud'
             else:
                 record_type = 'Credit'
 
