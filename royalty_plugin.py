@@ -15,6 +15,7 @@ def dbconnection():
     # env_var = content.decode('ascii')
     # print(env_var)
 
+    
     return conn, conn1, conn2
 
 
@@ -62,14 +63,22 @@ def buildskumap():
 
 def processcredits():
     with conn.cursor() as cursor:
-        sql = """select
-                  i.order_id,
-                  i.item_id,
-                  i.updated_at,
-                  o.state,
-                  o.status
-                from uaudio.sales_flat_order_item i JOIN uaudio.sales_flat_order o ON i.order_id = o.entity_id
-                where i.qty_refunded = 1 and i.updated_at between '2018-01-01' AND '2019-01-01' """
+        sql = """
+                        select i.order_id, i.item_id, i.updated_at,
+                        o.state, o.status from uaudio.sales_flat_creditmemo c join uaudio.sales_flat_order o ON c.order_id = o.entity_id
+                        join uaudio.sales_flat_order_item i on o.entity_id = i.order_id
+                        where i.qty_refunded = 1 and i.updated_at between '2018-01-01' AND '2019-01-01'
+                        UNION 
+                        select
+                          i.order_id,
+                          i.item_id,
+                          i.updated_at,
+                          o.state,
+                          o.status
+                        from uaudio.sales_flat_order_item i JOIN uaudio.sales_flat_order o ON i.order_id = o.entity_id
+                        where i.qty_refunded = 1 and i.updated_at between '2018-01-01' AND '2019-01-01'
+
+                         """
         cursor.execute(sql)
         orders = cursor.fetchall()
         print(orders)
@@ -171,9 +180,9 @@ def getorders():
                     JOIN uaudio.sales_flat_order_item i
                     ON i.vouchers_serial = v.vouchers_serial
                     where v.voucher_type = 'purchase' 
-                    AND vouchers_purchase_date = current_date 
+                    # AND vouchers_purchase_date = current_date 
                     # AND v.vouchers_serial = 'K4DC-XHF9-8DEN-TBH0'
-                    # AND o.entity_id  =
+                    AND o.entity_id  = 1064050
                     AND o.state IN ('complete', 'closed')
                     """
         cursor.execute(sql)
@@ -1207,6 +1216,8 @@ def getchannelorders(product_catalog, SkuMap):
                                 issue_type = 'nammb2b_'
                                 builddata(orderitem, product_catalog, dollars, conn1, purchase_type, issue_type)
 
+    # Process Credits
+    process_channel_credit()
     nammb2b_credits()
 
 
@@ -1218,6 +1229,32 @@ def getchannelorders(product_catalog, SkuMap):
                 print("Voucher type not handled", order['voucher_type'])
                 # print(order)
 '''
+
+
+def process_channel_credit():
+    with conn2.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+        sql = """select distinct serialnumber
+                    from rpt.serialnumberhistory
+                  where trantype = 'RMA-ENTRY' AND trandate BETWEEN '2018-01-01' AND '2018-12-01' """
+        cursor.execute(sql)
+        credit_serial_nos = cursor.fetchall()
+        credit_serials = [x['serialnumber'] for x in credit_serial_nos]
+
+        for x in credit_serials:
+                with conn1.cursor() as cursor:
+                    sql = """INSERT INTO dev.royalty (select purchase_type, item_type, order_id,order_increment_id, item_id,
+                             customer_id, order_sku, voucher_serial, custom_serial, sku, created_at, list_price, discounted_list_price, pro_rata, 
+                             net_price * -1, base_net_price * -1, price_incl_tax * -1, base_price_incl_tax * -1, 
+                             tax_amount * -1, base_tax_amount * -1, discount_amount * -1, base_discount_amount * -1, 
+                             special_price * -1, base_special_price * -1, owner_discount_amount * -1, 
+                             base_owner_discount_amount * -1, special_owner_discount_price * -1 , base_special_owner_discount_price * -1,
+                             voucher_amount * -1, base_voucher_amount * -1, order_currency_code, custom_history_id,
+                             custom_id, hw_serialnumber, invoice_date, order_state, order_status, 'Channel_Credit' from dev.royalty
+                            where purchase_type = 'channel' AND item_type != 'hw/sw_custom' AND hw_serialnumber = %s
+                            )"""
+                    cursor.execute(sql, (x,))
+                    conn1.commit()
+
 
 
 def nammb2b_credits():
@@ -1263,3 +1300,4 @@ if __name__ == '__main__':
     # processorders(vouchers, conn1, SkuMap, product_catalog)
     processcredits()
     # getchannelorders(product_catalog, SkuMap)
+    # process_channel_credit()
