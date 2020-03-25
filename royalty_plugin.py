@@ -8,15 +8,26 @@ def dbconnection():
     :return: connection
     '''
 
-    # Code to access S3 bucket
-    # s3 = boto3.client('s3')
-    # obj = s3.get_object(Bucket='bizapps.uaudio', Key='redshift.env.sh')
-    # content = (obj['Body'].read())
-    # env_var = content.decode('ascii')
-    # print(env_var)
+   s3= boto3.client('s3')
+	obj = s3.get_object(Bucket = 'secure.uaudio', Key='redshift.env.sh')
+	content = (obj['Body'].read())
+	env_var = content.decode('ascii')
+	env_var = (re.split('\n', env_var))
+	cred = {}
 
-    
-    return conn, conn1, conn2
+	for i in env_var:
+	    i = (re.split('=', i))
+	    if len(i) > 1: cred[i[0][7:]] = i[1]
+	print(cred)
+
+	live_conn = pymysql.connect(
+	    host='db-rr1.uaudio.com',
+	    user=cred['RDS_USER'],
+	    password=cred['RDS_PASSWORD'],
+	    cursorclass=pymysql.cursors.DictCursor
+	)
+
+    return live_conn
 
 
 def buildskumap():
